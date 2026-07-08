@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Save } from "lucide-react";
+import { Save, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { buildFieldSuggestions, type SuggestionField } from "@/lib/surgeries/history";
@@ -45,6 +45,9 @@ export function SurgeryForm({
   const [favorites, setFavorites] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [toast, setToast] = useState<{ tone: "success" | "error"; message: string } | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -191,6 +194,59 @@ export function SurgeryForm({
     router.refresh();
   }
 
+  async function deleteSurgery() {
+    if (!initialSurgery) return;
+
+    setDeleting(true);
+    setToast(null);
+
+    const supabase = createBrowserSupabaseClient();
+    if (!supabase) {
+      const message = "Supabase no esta configurado.";
+      console.error(message);
+      setToast({ tone: "error", message });
+      setDeleting(false);
+      return;
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      console.error("Error obteniendo usuario antes de eliminar cirugia:", userError);
+      setToast({ tone: "error", message: userError.message });
+      setDeleting(false);
+      return;
+    }
+
+    if (!userData.user) {
+      setDeleting(false);
+      router.push("/login");
+      return;
+    }
+
+    const result = await supabase
+      .from("surgeries")
+      .delete()
+      .eq("id", initialSurgery.id)
+      .select("id")
+      .single();
+
+    if (result.error) {
+      console.error("Error eliminando cirugia en Supabase:", result.error);
+      setToast({ tone: "error", message: result.error.message });
+      setDeleting(false);
+      return;
+    }
+
+    setToast({ tone: "success", message: "Cirugía eliminada correctamente." });
+    setDeleteDialogOpen(false);
+    setDeleting(false);
+
+    window.setTimeout(() => {
+      router.push("/surgeries");
+      router.refresh();
+    }, 700);
+  }
+
   return (
     <form onSubmit={submit} className="space-y-8">
       <section className="paper-panel rounded-lg p-5">
@@ -282,6 +338,61 @@ export function SurgeryForm({
           {saving ? "Guardando..." : mode === "edit" ? "Guardar cambios" : "Guardar cirugia"}
         </Button>
       </div>
+
+      {mode === "edit" ? (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-red-50 px-3.5 py-2 text-sm font-medium text-red-700 transition hover:-translate-y-0.5 hover:bg-red-100"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 className="size-4" />
+            Eliminar cirugía
+          </button>
+        </div>
+      ) : null}
+
+      {deleteDialogOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" role="alertdialog" aria-modal="true" aria-labelledby="delete-surgery-title">
+          <div className="w-full max-w-md rounded-lg border border-line bg-white p-5 shadow-soft">
+            <h2 id="delete-surgery-title" className="text-lg font-semibold text-ink">
+              ¿Eliminar esta cirugía?
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-graphite">
+              Esta acción eliminará permanentemente la cirugía y no se puede deshacer.
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md border border-line bg-white px-3.5 py-2 text-sm font-medium text-ink transition hover:-translate-y-0.5"
+                onClick={() => setDeleteDialogOpen(false)}
+                disabled={deleting}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-md bg-red-700 px-3.5 py-2 text-sm font-medium text-white transition hover:-translate-y-0.5 hover:bg-red-800 disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={deleteSurgery}
+                disabled={deleting}
+              >
+                {deleting ? "Eliminando..." : "Eliminar cirugía"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {toast ? (
+        <div
+          className={`fixed bottom-5 right-5 z-50 max-w-sm rounded-lg border px-4 py-3 text-sm shadow-soft ${
+            toast.tone === "success" ? "border-green-200 bg-green-50 text-moss" : "border-red-200 bg-red-50 text-red-700"
+          }`}
+          role="status"
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </form>
   );
 }
