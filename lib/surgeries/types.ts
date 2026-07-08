@@ -68,3 +68,18 @@ export type FieldSuggestion = {
   latest: string;
   favorite?: boolean;
 };
+
+export type SurgeryEvolutionEvent = {
+  id: string;
+  user_id: string;
+  surgery_id: string;
+  event_type: "first_review" | "review" | "discharge";
+  title: string;
+  scheduled_date: string;
+  clinical_state: string | null;
+  notes: string | null;
+  next_steps: string | null;
+  status: "pending" | "completed";
+  created_at: string;
+  updated_at: string;
+};

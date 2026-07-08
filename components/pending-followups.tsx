@@ -6,11 +6,12 @@ import { ArrowRight, CalendarClock } from "lucide-react";
 import { ClinicalStatusBadge } from "@/components/clinical-status-badge";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { getClinicalStatus, getNextEvolutionEvent, needsFollowupAttention } from "@/lib/surgeries/evolution";
-import type { Surgery } from "@/lib/surgeries/types";
+import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
 export function PendingFollowups() {
   const [surgeries, setSurgeries] = useState<Surgery[]>([]);
+  const [eventsBySurgery, setEventsBySurgery] = useState<Record<string, SurgeryEvolutionEvent[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -20,21 +21,53 @@ export function PendingFollowups() {
       setLoading(false);
       return;
     }
+    const supabaseClient = supabase;
 
-    supabase
-      .from("surgeries")
-      .select("*")
-      .order("surgery_date", { ascending: false })
-      .then(({ data, error: queryError }) => {
-        if (queryError) setError(queryError.message);
-        setSurgeries((data ?? []) as Surgery[]);
+    async function load() {
+      const { data: surgeryRows, error: surgeryError } = await supabaseClient
+        .from("surgeries")
+        .select("*")
+        .order("surgery_date", { ascending: false });
+
+      if (surgeryError) {
+        setError(surgeryError.message);
         setLoading(false);
-      });
+        return;
+      }
+
+      const loadedSurgeries = (surgeryRows ?? []) as Surgery[];
+      setSurgeries(loadedSurgeries);
+
+      if (loadedSurgeries.length === 0) {
+        setEventsBySurgery({});
+        setLoading(false);
+        return;
+      }
+
+      const { data: eventRows, error: eventError } = await supabaseClient
+        .from("surgery_evolution_events")
+        .select("*")
+        .in("surgery_id", loadedSurgeries.map((surgery) => surgery.id));
+
+      if (eventError) {
+        console.error("Error cargando seguimientos reales:", eventError);
+        setEventsBySurgery({});
+      } else {
+        setEventsBySurgery(groupEvents((eventRows ?? []) as SurgeryEvolutionEvent[]));
+      }
+
+      setLoading(false);
+    }
+
+    load();
   }, []);
 
   const pending = useMemo(
-    () => surgeries.filter((surgery) => needsFollowupAttention(surgery)).slice(0, 4),
-    [surgeries]
+    () =>
+      surgeries
+        .filter((surgery) => needsFollowupAttention(surgery, eventsBySurgery[surgery.id] ?? []))
+        .slice(0, 4),
+    [eventsBySurgery, surgeries]
   );
 
   return (
@@ -50,8 +83,9 @@ export function PendingFollowups() {
 
       <div className="space-y-3">
         {pending.map((surgery) => {
-          const nextEvent = getNextEvolutionEvent(surgery);
-          const status = getClinicalStatus(surgery);
+          const events = eventsBySurgery[surgery.id] ?? [];
+          const nextEvent = getNextEvolutionEvent(surgery, events);
+          const status = getClinicalStatus(surgery, events);
 
           return (
             <Link
@@ -84,6 +118,13 @@ export function PendingFollowups() {
       </div>
     </Card>
   );
+}
+
+function groupEvents(events: SurgeryEvolutionEvent[]) {
+  return events.reduce<Record<string, SurgeryEvolutionEvent[]>>((acc, event) => {
+    acc[event.surgery_id] = [...(acc[event.surgery_id] ?? []), event].sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date));
+    return acc;
+  }, {});
 }
 
 function formatShortDate(value: string) {

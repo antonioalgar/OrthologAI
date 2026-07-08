@@ -1,9 +1,11 @@
-import type { Surgery } from "@/lib/surgeries/types";
+import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
 
 export type ClinicalStatus = "incomplete" | "followup" | "closed" | "active_complication";
 
 export type EvolutionEvent = {
   key: string;
+  id?: string;
+  eventType: "initial" | SurgeryEvolutionEvent["event_type"];
   title: string;
   date: string;
   clinicalState: string;
@@ -11,19 +13,20 @@ export type EvolutionEvent = {
   nextSteps: string;
   isCompleted: boolean;
   isPending: boolean;
+  isPersisted: boolean;
 };
 
 export const clinicalStatusLabels: Record<ClinicalStatus, string> = {
   incomplete: "Incompleta",
   followup: "En seguimiento",
-  closed: "Cerrada",
+  closed: "Cerrada / alta",
   active_complication: "Complicacion activa"
 };
 
-export function getClinicalStatus(surgery: Surgery): ClinicalStatus {
+export function getClinicalStatus(surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []): ClinicalStatus {
   if (hasActiveComplication(surgery)) return "active_complication";
   if (isRegistrationIncomplete(surgery)) return "incomplete";
-  if (hasExplicitDischarge(surgery)) return "closed";
+  if (hasDischargeEvent(evolutionEvents) || hasExplicitDischarge(surgery)) return "closed";
   return "followup";
 }
 
@@ -34,84 +37,87 @@ export function getClinicalStatusDescription(status: ClinicalStatus) {
   return "Cirugia realizada con revisiones pendientes.";
 }
 
-export function getEvolutionEvents(surgery: Surgery, today = new Date()): EvolutionEvent[] {
+export function getEvolutionEvents(surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []): EvolutionEvent[] {
   const surgeryDate = parseDate(surgery.surgery_date);
-  const status = getClinicalStatus(surgery);
-  const normalizedToday = startOfDay(today);
-  const hasComplication = status === "active_complication";
+  const status = getClinicalStatus(surgery, evolutionEvents);
+  const storedEvents = evolutionEvents
+    .map(toTimelineEvent)
+    .sort((a, b) => a.date.localeCompare(b.date));
 
-  const events = [
+  return [
     {
       key: "initial",
-      title: "Cirugia inicial",
-      date: surgeryDate,
+      eventType: "initial",
+      title: "Cirugía inicial",
+      date: toIsoDate(surgeryDate),
       clinicalState: status === "incomplete" ? "Registro pendiente de completar" : "Acto quirurgico registrado",
       notes: surgery.surgical_observations || surgery.diagnosis || "Pendiente de ampliar notas clinicas.",
-      nextSteps: status === "incomplete" ? "Completar datos basicos del caso." : "Planificar primera revision."
+      nextSteps: status === "incomplete" ? "Completar datos basicos del caso." : "Configurar primera revisión.",
+      isCompleted: true,
+      isPending: false,
+      isPersisted: false
     },
-    {
-      key: "2w",
-      title: "Revision 2 semanas",
-      date: addDays(surgeryDate, 14),
-      clinicalState: "Control precoz",
-      notes: "Revisar herida, dolor, movilidad inicial y tolerancia a la rehabilitacion.",
-      nextSteps: "Registrar hallazgos y confirmar evolucion esperada."
-    },
-    {
-      key: "6w",
-      title: "Revision 6 semanas",
-      date: addDays(surgeryDate, 42),
-      clinicalState: "Control funcional",
-      notes: "Valorar rango de movilidad, carga, fuerza y adherencia al plan.",
-      nextSteps: "Ajustar rehabilitacion y programar control a 3 meses."
-    },
-    {
-      key: "3m",
-      title: "Revision 3 meses",
-      date: addMonths(surgeryDate, 3),
-      clinicalState: "Evolucion intermedia",
-      notes: "Comparar funcion con objetivos esperados y documentar incidencias.",
-      nextSteps: "Mantener seguimiento o escalar si hay desviaciones."
-    },
-    {
-      key: "6m",
-      title: "Revision 6 meses",
-      date: addMonths(surgeryDate, 6),
-      clinicalState: "Control de cierre",
-      notes: "Valorar resultado clinico, limitaciones residuales y satisfaccion.",
-      nextSteps: "Decidir alta clinica o seguimiento adicional."
-    },
-    {
-      key: "discharge",
-      title: "Alta",
-      date: addMonths(surgeryDate, 6),
-      clinicalState: status === "closed" ? "Alta registrada" : "Alta pendiente",
-      notes: status === "closed" ? "Caso marcado como cerrado o dado de alta en las notas actuales." : "Pendiente de marcar alta real.",
-      nextSteps: status === "closed" ? "Conservar caso como referencia." : "Anadir campo de alta o evento real en Supabase."
-    }
+    ...(storedEvents.length ? storedEvents : [getFallbackFirstReview(surgery)])
   ];
-
-  return events.map((event) => {
-    const eventDay = startOfDay(event.date);
-    const isCompleted =
-      status === "closed" || event.key === "initial" || (!hasComplication && eventDay.getTime() < normalizedToday.getTime());
-
-    return {
-      ...event,
-      date: toIsoDate(event.date),
-      isCompleted,
-      isPending: !isCompleted
-    };
-  });
 }
 
-export function getNextEvolutionEvent(surgery: Surgery, today = new Date()) {
-  return getEvolutionEvents(surgery, today).find((event) => event.isPending);
+export function getNextEvolutionEvent(surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []) {
+  return getEvolutionEvents(surgery, evolutionEvents)
+    .filter((event) => event.eventType !== "discharge")
+    .find((event) => event.isPending);
 }
 
-export function needsFollowupAttention(surgery: Surgery, today = new Date()) {
-  const status = getClinicalStatus(surgery);
-  return status === "followup" || status === "active_complication" || status === "incomplete" || Boolean(getNextEvolutionEvent(surgery, today));
+export function needsFollowupAttention(surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []) {
+  const status = getClinicalStatus(surgery, evolutionEvents);
+  return status === "followup" || status === "active_complication" || status === "incomplete" || Boolean(getNextEvolutionEvent(surgery, evolutionEvents));
+}
+
+export function getDefaultFirstReview(surgery: Surgery, option: "2w" | "3w" | "1m" = "2w") {
+  const surgeryDate = parseDate(surgery.surgery_date);
+  const date = option === "2w" ? addDays(surgeryDate, 14) : option === "3w" ? addDays(surgeryDate, 21) : addMonths(surgeryDate, 1);
+  const title = option === "2w" ? "Revisión 2 semanas" : option === "3w" ? "Revisión 3 semanas" : "Revisión 1 mes";
+
+  return {
+    title,
+    scheduled_date: toIsoDate(date),
+    clinical_state: "Primera revision",
+    notes: "Valorar herida, dolor, movilidad inicial y tolerancia a la rehabilitacion.",
+    next_steps: "Registrar hallazgos y decidir siguiente control.",
+    status: "pending" as const
+  };
+}
+
+function toTimelineEvent(event: SurgeryEvolutionEvent): EvolutionEvent {
+  return {
+    key: event.id,
+    id: event.id,
+    eventType: event.event_type,
+    title: event.title,
+    date: event.scheduled_date,
+    clinicalState: event.clinical_state || (event.event_type === "discharge" ? "Alta clinica" : "Revision clinica"),
+    notes: event.notes || "Sin notas registradas.",
+    nextSteps: event.next_steps || (event.status === "completed" ? "Sin proximos pasos registrados." : "Pendiente de definir."),
+    isCompleted: event.status === "completed",
+    isPending: event.status !== "completed",
+    isPersisted: true
+  };
+}
+
+function getFallbackFirstReview(surgery: Surgery): EvolutionEvent {
+  const event = getDefaultFirstReview(surgery);
+
+  return {
+    key: "fallback-first-review",
+    eventType: "first_review",
+    title: "Primera revisión",
+    date: event.scheduled_date,
+    clinicalState: event.clinical_state,
+    notes: event.notes,
+    nextSteps: event.next_steps,
+    isCompleted: false,
+    isPending: true,
+    isPersisted: false
+  };
 }
 
 function isRegistrationIncomplete(surgery: Surgery) {
@@ -120,6 +126,10 @@ function isRegistrationIncomplete(surgery: Surgery) {
 
 function hasActiveComplication(surgery: Surgery) {
   return Boolean(surgery.complications?.trim());
+}
+
+function hasDischargeEvent(evolutionEvents: SurgeryEvolutionEvent[]) {
+  return evolutionEvents.some((event) => event.event_type === "discharge" && event.status === "completed");
 }
 
 function hasExplicitDischarge(surgery: Surgery) {

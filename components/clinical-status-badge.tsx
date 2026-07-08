@@ -7,7 +7,7 @@ import {
   getClinicalStatusDescription,
   type ClinicalStatus
 } from "@/lib/surgeries/evolution";
-import type { Surgery } from "@/lib/surgeries/types";
+import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
 
 const statusConfig: Record<
   ClinicalStatus,
@@ -23,8 +23,16 @@ const statusConfig: Record<
   active_complication: { tone: "red", icon: TriangleAlert, label: clinicalStatusLabels.active_complication }
 };
 
-export function ClinicalStatusBadge({ surgery, status }: { surgery?: Surgery; status?: ClinicalStatus }) {
-  const clinicalStatus = status ?? (surgery ? getClinicalStatus(surgery) : "incomplete");
+export function ClinicalStatusBadge({
+  surgery,
+  status,
+  evolutionEvents = []
+}: {
+  surgery?: Surgery;
+  status?: ClinicalStatus;
+  evolutionEvents?: SurgeryEvolutionEvent[];
+}) {
+  const clinicalStatus = status ?? (surgery ? getClinicalStatus(surgery, evolutionEvents) : "incomplete");
   const config = statusConfig[clinicalStatus];
   const Icon = config.icon;
 
@@ -36,8 +44,8 @@ export function ClinicalStatusBadge({ surgery, status }: { surgery?: Surgery; st
   );
 }
 
-export function ClinicalStatusSummary({ surgery }: { surgery: Surgery }) {
-  const status = getClinicalStatus(surgery);
+export function ClinicalStatusSummary({ surgery, evolutionEvents = [] }: { surgery: Surgery; evolutionEvents?: SurgeryEvolutionEvent[] }) {
+  const status = getClinicalStatus(surgery, evolutionEvents);
   const config = statusConfig[status];
   const Icon = status === "incomplete" ? AlertCircle : config.icon;
 

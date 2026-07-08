@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { Surgery } from "@/lib/surgeries/types";
+import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
 import { formatCurrency } from "@/lib/utils";
 
 export default function SurgeryDetailPage() {
@@ -27,6 +27,7 @@ export default function SurgeryDetailPage() {
 function SurgeryDetail() {
   const params = useParams<{ surgeryId: string }>();
   const [surgery, setSurgery] = useState<Surgery | null>(null);
+  const [evolutionEvents, setEvolutionEvents] = useState<SurgeryEvolutionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -63,7 +64,7 @@ function SurgeryDetail() {
         <div className="mb-9">
           <div className="mb-4 flex flex-wrap gap-2">
             <Badge tone="blue">Cirugia real</Badge>
-            <ClinicalStatusBadge surgery={surgery} />
+            <ClinicalStatusBadge surgery={surgery} evolutionEvents={evolutionEvents} />
             {surgery.is_paid ? <Badge tone="green">Cobrado</Badge> : surgery.is_invoiced ? <Badge tone="orange">Facturado</Badge> : <Badge>Sin facturar</Badge>}
           </div>
           <h1 className="max-w-4xl text-3xl font-semibold tracking-normal text-ink sm:text-5xl">{surgery.procedure}</h1>
@@ -102,7 +103,7 @@ function SurgeryDetail() {
         <TextBlock title="Implantes" value={surgery.implants} />
         <TextBlock title="Complicaciones" value={surgery.complications} />
         <SurgeryBlock title="Evolucion / Seguimiento">
-          <EvolutionTimeline surgery={surgery} />
+          <EvolutionTimeline surgery={surgery} onEventsChange={setEvolutionEvents} />
         </SurgeryBlock>
         <SurgeryImageManager surgeryId={surgery.id} />
         <TextBlock title="Observaciones quirurgicas" value={surgery.surgical_observations} />
@@ -111,7 +112,7 @@ function SurgeryDetail() {
       </article>
 
       <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-        <ClinicalStatusSummary surgery={surgery} />
+        <ClinicalStatusSummary surgery={surgery} evolutionEvents={evolutionEvents} />
         <Card>
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Resumen del caso</h2>
