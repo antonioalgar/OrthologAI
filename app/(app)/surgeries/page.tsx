@@ -6,8 +6,8 @@ export default function SurgeriesPage() {
   return (
     <AuthGate>
       <PageHeader
-        eyebrow="Registro quirúrgico"
-        title="Tus cirugías reales, persistidas."
+        eyebrow="Registro quirurgico"
+        title="Tus cirugias reales, persistidas."
         description="Listado funcional conectado a Supabase. En este sprint buscamos utilidad diaria antes que filtros avanzados."
       />
       <SurgeriesClient />

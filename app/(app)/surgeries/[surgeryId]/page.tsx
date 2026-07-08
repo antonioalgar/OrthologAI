@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { BadgeEuro, BookOpen, CalendarDays, FileText, Hospital, Lightbulb, Pencil, Scissors, UserRound } from "lucide-react";
 import { AuthGate } from "@/components/auth-gate";
+import { ClinicalStatusBadge, ClinicalStatusSummary } from "@/components/clinical-status-badge";
+import { EvolutionTimeline } from "@/components/evolution-timeline";
 import { FieldGrid, SurgeryBlock } from "@/components/surgery-block";
 import { SurgeryImageManager } from "@/components/surgery-image-manager";
 import { Badge } from "@/components/ui/badge";
@@ -61,6 +63,7 @@ function SurgeryDetail() {
         <div className="mb-9">
           <div className="mb-4 flex flex-wrap gap-2">
             <Badge tone="blue">Cirugia real</Badge>
+            <ClinicalStatusBadge surgery={surgery} />
             {surgery.is_paid ? <Badge tone="green">Cobrado</Badge> : surgery.is_invoiced ? <Badge tone="orange">Facturado</Badge> : <Badge>Sin facturar</Badge>}
           </div>
           <h1 className="max-w-4xl text-3xl font-semibold tracking-normal text-ink sm:text-5xl">{surgery.procedure}</h1>
@@ -98,6 +101,9 @@ function SurgeryDetail() {
         <TextBlock title="Procedimiento" value={surgery.procedure} />
         <TextBlock title="Implantes" value={surgery.implants} />
         <TextBlock title="Complicaciones" value={surgery.complications} />
+        <SurgeryBlock title="Evolucion / Seguimiento">
+          <EvolutionTimeline surgery={surgery} />
+        </SurgeryBlock>
         <SurgeryImageManager surgeryId={surgery.id} />
         <TextBlock title="Observaciones quirurgicas" value={surgery.surgical_observations} />
         <TextBlock title="Que he aprendido hoy" value={surgery.lessons_learned} icon={<Lightbulb className="size-5 text-ember" />} />
@@ -105,6 +111,7 @@ function SurgeryDetail() {
       </article>
 
       <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+        <ClinicalStatusSummary surgery={surgery} />
         <Card>
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Resumen del caso</h2>

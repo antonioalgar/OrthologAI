@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ArrowRight, Plus, Search } from "lucide-react";
+import { ClinicalStatusBadge } from "@/components/clinical-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -51,7 +52,7 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
   });
 
   if (loading) {
-    return <Card>Cargando cirugías...</Card>;
+    return <Card>Cargando cirugias...</Card>;
   }
 
   if (error) {
@@ -68,13 +69,13 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
               className="w-full bg-transparent outline-none"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar procedimiento, diagnóstico, implante..."
+              placeholder="Buscar procedimiento, diagnostico, implante..."
             />
           </div>
           <Link href="/surgeries/new">
             <Button>
               <Plus className="size-4" />
-              Nueva cirugía
+              Nueva cirugia
             </Button>
           </Link>
         </div>
@@ -82,7 +83,7 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
       {filtered.length === 0 ? (
         <div className="p-6 text-sm text-graphite">
-          No hay cirugías todavía.
+          No hay cirugias todavia.
           <Link href="/surgeries/new" className="ml-2 font-semibold text-cobalt">
             Registra la primera.
           </Link>
@@ -98,18 +99,19 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
               <div>
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="font-semibold text-ink">{surgery.procedure}</h3>
+                  <ClinicalStatusBadge surgery={surgery} />
                   <Badge tone={surgery.is_paid ? "green" : surgery.is_invoiced ? "orange" : "neutral"}>
                     {surgery.is_paid ? "Cobrado" : surgery.is_invoiced ? "Facturado" : "Sin facturar"}
                   </Badge>
                 </div>
                 <p className="mt-1 text-sm text-graphite">
                   {formatDate(surgery.surgery_date)}
-                  {surgery.hospital ? ` · ${surgery.hospital}` : ""}
-                  {surgery.my_role ? ` · ${surgery.my_role}` : ""}
+                  {surgery.hospital ? ` - ${surgery.hospital}` : ""}
+                  {surgery.my_role ? ` - ${surgery.my_role}` : ""}
                 </p>
                 <p className="mt-2 text-sm text-graphite">
-                  {surgery.diagnosis || "Sin diagnóstico registrado"}
-                  {surgery.payment_amount ? ` · ${formatCurrency(Number(surgery.payment_amount))}` : ""}
+                  {surgery.diagnosis || "Sin diagnostico registrado"}
+                  {surgery.payment_amount ? ` - ${formatCurrency(Number(surgery.payment_amount))}` : ""}
                 </p>
               </div>
               <div className="flex items-center gap-2 text-sm font-semibold text-cobalt">

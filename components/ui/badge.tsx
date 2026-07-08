@@ -5,6 +5,7 @@ const tones = {
   blue: "border-blue-200 bg-blue-50 text-cobalt",
   green: "border-green-200 bg-green-50 text-moss",
   orange: "border-orange-200 bg-orange-50 text-ember",
+  red: "border-red-200 bg-red-50 text-red-700",
   dark: "border-ink bg-ink text-white"
 };
 
