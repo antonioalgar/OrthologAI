@@ -196,19 +196,30 @@ Three questions should guide the primary product experience:
 
 ### Action-oriented visualization
 
+Action-oriented visualization is a core requirement. OrthoLogAI must not merely allow information to be stored; it must make what needs attention extremely easy to find.
+
+When opening the application, the user should be able to answer quickly:
+
+- Which cases are pending?
+- Which patients need review?
+- Which reviews are overdue?
+- Which records are incomplete?
+- Which private surgeries have not been invoiced?
+- Which invoices are still awaiting payment?
+
 The dashboard and case lists should make actionable states immediately visible.
 
 Important categories include:
 
-- overdue clinical review
-- upcoming clinical review
-- surgery/case still incomplete
-- surgery with no appropriate review recorded yet
+- incomplete case
+- overdue review
+- upcoming review
+- under follow-up
 - active complication
-- pending invoice
+- discharged
+- not invoiced
 - invoiced but unpaid
 - paid
-- discharged / closed
 
 These concepts must remain semantically distinct.
 
@@ -222,9 +233,9 @@ The preferred information flow is:
 
 Users should not need to open cases individually to discover what requires attention.
 
-### Private practice and payments are a core capability
+### Private practice and payments are a core workflow
 
-Financial management is a central recurring use case for surgeons working in private practice.
+Managing the economics of private practice is not a secondary capability of OrthoLogAI. For a surgeon with private activity, it should be one of the application's recurring core workflows.
 
 The long-term financial model should be capable of representing:
 
@@ -243,7 +254,15 @@ The basic financial lifecycle should remain simple:
 
 **Not invoiced → Invoiced → Paid**
 
-with an optional incident/problem state when required.
+with the option to record an incident when required.
+
+Financial status must always remain separate from clinical status. A surgery may simultaneously be:
+
+**Paid**
+
+and
+
+**Under clinical follow-up.**
 
 Future financial dashboards should make it possible to understand, for a selected period:
 
@@ -255,7 +274,7 @@ Future financial dashboards should make it possible to understand, for a selecte
 - cases awaiting invoice
 - invoices awaiting payment
 
-Do not turn OrthoLogAI into full accounting software.
+Do not turn OrthoLogAI into full accounting software. Its purpose is to give the surgeon control over their own professional activity and the payments associated with their procedures.
 
 The objective is to let the surgeon immediately understand:
 
@@ -265,6 +284,10 @@ The objective is to let the surgeon immediately understand:
 - what still requires financial action
 
 ### Visualization and information retrieval
+
+Information retrieval is as important as data entry.
+
+> **A feature is not complete merely because information can be stored. Important information must also be easy to find, scan and act upon.**
 
 Ease of visualization is a first-class product requirement.
 
@@ -277,6 +300,7 @@ Prefer:
 - clear status hierarchy
 - quick-filter chips
 - filtered views
+- actionable information
 - progressive disclosure
 - visible next actions
 
