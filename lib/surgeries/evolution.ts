@@ -61,10 +61,18 @@ export function getEvolutionEvents(surgery: Surgery, evolutionEvents: SurgeryEvo
   ];
 }
 
-export function getNextEvolutionEvent(surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []) {
-  return getEvolutionEvents(surgery, evolutionEvents)
-    .filter((event) => event.eventType !== "discharge")
-    .find((event) => event.isPending);
+export function getNextEvolutionEvent(_surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []) {
+  return evolutionEvents
+    .filter((event) => event.event_type !== "discharge" && event.status === "pending")
+    .sort((a, b) => a.scheduled_date.localeCompare(b.scheduled_date))[0];
+}
+
+export function isEvolutionEventOverdue(event: SurgeryEvolutionEvent, today = toIsoDate(startOfDay(new Date()))) {
+  return event.event_type !== "discharge" && event.status === "pending" && event.scheduled_date < today;
+}
+
+export function hasOverdueReview(evolutionEvents: SurgeryEvolutionEvent[] = []) {
+  return evolutionEvents.some((event) => isEvolutionEventOverdue(event));
 }
 
 export function needsFollowupAttention(surgery: Surgery, evolutionEvents: SurgeryEvolutionEvent[] = []) {
@@ -120,7 +128,7 @@ function getFallbackFirstReview(surgery: Surgery): EvolutionEvent {
   };
 }
 
-function isRegistrationIncomplete(surgery: Surgery) {
+export function isRegistrationIncomplete(surgery: Surgery) {
   return !surgery.surgery_date || !surgery.procedure || !surgery.diagnosis || !surgery.hospital || !surgery.my_role;
 }
 

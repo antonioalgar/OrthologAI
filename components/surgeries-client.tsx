@@ -1,21 +1,57 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { ArrowRight, Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowRight, CalendarClock, Hospital, Plus, Search, Stethoscope } from "lucide-react";
 import { ClinicalStatusBadge } from "@/components/clinical-status-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  groupEvolutionEvents,
+  isSurgeryFilter,
+  matchesSurgeryFilter,
+  surgeryFilterLabels,
+  type SurgeryFilter
+} from "@/lib/surgeries/filters";
+import { getNextEvolutionEvent, isEvolutionEventOverdue } from "@/lib/surgeries/evolution";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { Surgery } from "@/lib/surgeries/types";
-import { formatCurrency } from "@/lib/utils";
+import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
+import { cn } from "@/lib/utils";
+
+const visibleFilters: SurgeryFilter[] = [
+  "all",
+  "pending",
+  "overdue",
+  "upcoming",
+  "followup",
+  "closed",
+  "incomplete",
+  "not-invoiced",
+  "unpaid",
+  "paid"
+];
 
 export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
   const [surgeries, setSurgeries] = useState<Surgery[]>([]);
+  const [eventsBySurgery, setEventsBySurgery] = useState<Record<string, SurgeryEvolutionEvent[]>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<SurgeryFilter>("all");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (compact) return;
+
+    function syncFilterFromUrl() {
+      const requestedFilter = new URLSearchParams(window.location.search).get("filter");
+      setFilter(isSurgeryFilter(requestedFilter) ? requestedFilter : "all");
+    }
+
+    syncFilterFromUrl();
+    window.addEventListener("popstate", syncFilterFromUrl);
+    return () => window.removeEventListener("popstate", syncFilterFromUrl);
+  }, [compact]);
 
   useEffect(() => {
     const supabase = createBrowserSupabaseClient();
@@ -23,113 +59,195 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
       setLoading(false);
       return;
     }
+    const supabaseClient = supabase;
 
-    supabase
-      .from("surgeries")
-      .select("*")
-      .order("surgery_date", { ascending: false })
-      .then(({ data, error: queryError }) => {
-        if (queryError) setError(queryError.message);
-        setSurgeries((data ?? []) as Surgery[]);
+    async function load() {
+      const { data: surgeryRows, error: surgeryError } = await supabaseClient
+        .from("surgeries")
+        .select("*")
+        .order("surgery_date", { ascending: false });
+
+      if (surgeryError) {
+        setError(surgeryError.message);
         setLoading(false);
-      });
+        return;
+      }
+
+      const loadedSurgeries = (surgeryRows ?? []) as Surgery[];
+      setSurgeries(loadedSurgeries);
+
+      if (loadedSurgeries.length > 0) {
+        const { data: eventRows, error: eventError } = await supabaseClient
+          .from("surgery_evolution_events")
+          .select("*")
+          .in("surgery_id", loadedSurgeries.map((surgery) => surgery.id));
+
+        if (eventError) setError(eventError.message);
+        else setEventsBySurgery(groupEvolutionEvents((eventRows ?? []) as SurgeryEvolutionEvent[]));
+      }
+
+      setLoading(false);
+    }
+
+    load();
   }, []);
 
-  const filtered = surgeries.filter((surgery) => {
-    const text = [
-      surgery.procedure,
-      surgery.diagnosis,
-      surgery.hospital,
-      surgery.implants,
-      surgery.complications,
-      surgery.lessons_learned,
-      surgery.senior_surgeon_pearls
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-    return text.includes(search.toLowerCase());
-  });
+  const filtered = useMemo(
+    () =>
+      surgeries.filter((surgery) => {
+        const text = [
+          surgery.procedure,
+          surgery.diagnosis,
+          surgery.hospital,
+          surgery.my_role,
+          surgery.patient_identifier,
+          surgery.implants,
+          surgery.complications,
+          surgery.lessons_learned,
+          surgery.senior_surgeon_pearls
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-  if (loading) {
-    return <Card>Cargando cirugias...</Card>;
+        return (
+          text.includes(search.trim().toLowerCase()) &&
+          (compact || matchesSurgeryFilter(surgery, eventsBySurgery[surgery.id] ?? [], filter))
+        );
+      }),
+    [compact, eventsBySurgery, filter, search, surgeries]
+  );
+
+  function selectFilter(nextFilter: SurgeryFilter) {
+    setFilter(nextFilter);
+    const url = new URL(window.location.href);
+    if (nextFilter === "all") url.searchParams.delete("filter");
+    else url.searchParams.set("filter", nextFilter);
+    window.history.pushState({}, "", `${url.pathname}${url.search}`);
   }
 
-  if (error) {
-    return <Card className="text-sm text-ember">{error}</Card>;
+  function clearFilters() {
+    setSearch("");
+    selectFilter("all");
   }
+
+  if (loading) return <Card>Cargando cirugías...</Card>;
+  if (error) return <Card className="text-sm text-ember">{error}</Card>;
+
+  const hasActiveFilters = search.trim().length > 0 || filter !== "all";
 
   return (
     <Card className="p-0">
       {!compact ? (
-        <div className="flex flex-col gap-3 border-b border-line p-4 lg:flex-row lg:items-center">
-          <div className="flex flex-1 items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-graphite">
-            <Search className="size-4" />
-            <input
-              className="w-full bg-transparent outline-none"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar procedimiento, diagnostico, implante..."
-            />
+        <div className="border-b border-line p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex flex-1 items-center gap-2 rounded-lg border border-line bg-white px-3 py-2 text-sm text-graphite focus-within:border-cobalt">
+              <Search className="size-4" />
+              <input
+                className="w-full bg-transparent outline-none"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Buscar procedimiento, diagnóstico, hospital..."
+              />
+            </div>
+            <Link href="/surgeries/new">
+              <Button className="w-full lg:w-auto">
+                <Plus className="size-4" />
+                Nueva cirugía
+              </Button>
+            </Link>
           </div>
-          <Link href="/surgeries/new">
-            <Button>
-              <Plus className="size-4" />
-              Nueva cirugia
-            </Button>
-          </Link>
+
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Filtros rápidos">
+            {visibleFilters.map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => selectFilter(item)}
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cobalt",
+                  filter === item
+                    ? "border-ink bg-ink text-white"
+                    : "border-line bg-white text-graphite hover:border-cobalt/40 hover:text-ink"
+                )}
+                aria-pressed={filter === item}
+              >
+                {surgeryFilterLabels[item]}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
 
       {filtered.length === 0 ? (
         <div className="p-6 text-sm text-graphite">
-          No hay cirugias todavia.
-          <Link href="/surgeries/new" className="ml-2 font-semibold text-cobalt">
-            Registra la primera.
-          </Link>
+          {surgeries.length === 0 ? (
+            <>
+              No hay cirugías todavía.
+              <Link href="/surgeries/new" className="ml-2 font-semibold text-cobalt">Registra la primera.</Link>
+            </>
+          ) : (
+            <>
+              <p>No hay cirugías que coincidan con estos filtros.</p>
+              {hasActiveFilters ? (
+                <button type="button" onClick={clearFilters} className="mt-2 font-semibold text-cobalt">Ver todas las cirugías</button>
+              ) : null}
+            </>
+          )}
         </div>
       ) : (
         <div className="divide-y divide-line">
-          {filtered.slice(0, compact ? 5 : undefined).map((surgery) => (
-            <Link
-              key={surgery.id}
-              href={`/surgeries/${surgery.id}`}
-              className="grid gap-3 p-4 transition hover:bg-white md:grid-cols-[1fr_auto]"
-            >
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-semibold text-ink">{surgery.procedure}</h3>
-                  <ClinicalStatusBadge surgery={surgery} />
-                  <Badge tone={surgery.is_paid ? "green" : surgery.is_invoiced ? "orange" : "neutral"}>
-                    {surgery.is_paid ? "Cobrado" : surgery.is_invoiced ? "Facturado" : "Sin facturar"}
-                  </Badge>
+          {filtered.slice(0, compact ? 5 : undefined).map((surgery) => {
+            const evolutionEvents = eventsBySurgery[surgery.id] ?? [];
+            const nextReview = getNextEvolutionEvent(surgery, evolutionEvents);
+
+            return (
+              <Link
+                key={surgery.id}
+                href={`/surgeries/${surgery.id}`}
+                className="grid gap-3 p-4 transition hover:bg-white md:grid-cols-[minmax(0,1fr)_auto]"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-semibold text-ink">{surgery.procedure}</h3>
+                    <ClinicalStatusBadge surgery={surgery} evolutionEvents={evolutionEvents} />
+                    <PaymentBadge surgery={surgery} />
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-graphite">
+                    <span>{formatDate(surgery.surgery_date)}</span>
+                    {surgery.hospital ? <span className="inline-flex items-center gap-1.5"><Hospital className="size-3.5" />{surgery.hospital}</span> : null}
+                    {surgery.my_role ? <span className="inline-flex items-center gap-1.5"><Stethoscope className="size-3.5" />{surgery.my_role}</span> : null}
+                  </div>
+
+                  {nextReview ? (
+                    <div className={cn("mt-2 inline-flex items-center gap-1.5 text-xs font-semibold", isEvolutionEventOverdue(nextReview) ? "text-ember" : "text-cobalt")}>
+                      <CalendarClock className="size-3.5" />
+                      {isEvolutionEventOverdue(nextReview) ? "Revisión atrasada" : "Próxima revisión"}: {formatDate(nextReview.scheduled_date)}
+                    </div>
+                  ) : null}
                 </div>
-                <p className="mt-1 text-sm text-graphite">
-                  {formatDate(surgery.surgery_date)}
-                  {surgery.hospital ? ` - ${surgery.hospital}` : ""}
-                  {surgery.my_role ? ` - ${surgery.my_role}` : ""}
-                </p>
-                <p className="mt-2 text-sm text-graphite">
-                  {surgery.diagnosis || "Sin diagnostico registrado"}
-                  {surgery.payment_amount ? ` - ${formatCurrency(Number(surgery.payment_amount))}` : ""}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 text-sm font-semibold text-cobalt">
-                Abrir
-                <ArrowRight className="size-4" />
-              </div>
-            </Link>
-          ))}
+
+                <div className="flex items-center gap-2 self-center text-sm font-semibold text-cobalt">
+                  Abrir <ArrowRight className="size-4" />
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </Card>
   );
 }
 
+function PaymentBadge({ surgery }: { surgery: Surgery }) {
+  if (surgery.is_paid) return <Badge tone="green">Cobrada</Badge>;
+  if (surgery.is_invoiced) return <Badge tone="orange">Pendiente de cobro</Badge>;
+  return <Badge>Sin facturar</Badge>;
+}
+
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  }).format(new Date(`${value}T00:00:00`));
+  return new Intl.DateTimeFormat("es-ES", { day: "2-digit", month: "short", year: "numeric" }).format(
+    new Date(`${value}T00:00:00`)
+  );
 }

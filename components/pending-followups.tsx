@@ -98,7 +98,7 @@ export function PendingFollowups() {
                   <p className="truncate text-sm font-semibold text-ink">{surgery.procedure}</p>
                   <p className="mt-1 text-xs text-graphite">
                     {formatShortDate(surgery.surgery_date)}
-                    {nextEvent ? ` - proxima revision ${formatMonth(nextEvent.date)}` : " - evolucion incompleta"}
+                    {nextEvent ? ` - proxima revision ${formatMonth(nextEvent.scheduled_date)}` : " - evolucion incompleta"}
                   </p>
                 </div>
                 <ArrowRight className="mt-1 size-4 shrink-0 text-cobalt" />
