@@ -4,19 +4,22 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, CalendarClock, Hospital, Plus, Search, Stethoscope } from "lucide-react";
 import { ClinicalStatusBadge } from "@/components/clinical-status-badge";
+import { FinancialStatusBadge } from "@/components/surgery-finance-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   groupEvolutionEvents,
+  groupProfessionalActivities,
   isSurgeryFilter,
   matchesSurgeryFilter,
   surgeryFilterLabels,
   type SurgeryFilter
 } from "@/lib/surgeries/filters";
 import { getNextEvolutionEvent, isEvolutionEventOverdue } from "@/lib/surgeries/evolution";
+import { getFinancialSnapshot } from "@/lib/surgeries/finance";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
+import type { ProfessionalActivity, Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
 import { cn } from "@/lib/utils";
 
 const visibleFilters: SurgeryFilter[] = [
@@ -29,12 +32,16 @@ const visibleFilters: SurgeryFilter[] = [
   "incomplete",
   "not-invoiced",
   "unpaid",
-  "paid"
+  "paid",
+  "issue",
+  "private",
+  "public"
 ];
 
 export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
   const [surgeries, setSurgeries] = useState<Surgery[]>([]);
   const [eventsBySurgery, setEventsBySurgery] = useState<Record<string, SurgeryEvolutionEvent[]>>({});
+  const [activitiesBySurgery, setActivitiesBySurgery] = useState<Record<string, ProfessionalActivity>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SurgeryFilter>("all");
@@ -77,13 +84,17 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
       setSurgeries(loadedSurgeries);
 
       if (loadedSurgeries.length > 0) {
-        const { data: eventRows, error: eventError } = await supabaseClient
-          .from("surgery_evolution_events")
-          .select("*")
-          .in("surgery_id", loadedSurgeries.map((surgery) => surgery.id));
+        const surgeryIds = loadedSurgeries.map((surgery) => surgery.id);
+        const [eventsResult, activitiesResult] = await Promise.all([
+          supabaseClient.from("surgery_evolution_events").select("*").in("surgery_id", surgeryIds),
+          supabaseClient.from("professional_activities").select("*").in("surgery_id", surgeryIds)
+        ]);
 
-        if (eventError) setError(eventError.message);
-        else setEventsBySurgery(groupEvolutionEvents((eventRows ?? []) as SurgeryEvolutionEvent[]));
+        if (eventsResult.error) setError(eventsResult.error.message);
+        else setEventsBySurgery(groupEvolutionEvents((eventsResult.data ?? []) as SurgeryEvolutionEvent[]));
+
+        if (activitiesResult.error) console.error("Usando compatibilidad económica legacy:", activitiesResult.error);
+        else setActivitiesBySurgery(groupProfessionalActivities((activitiesResult.data ?? []) as ProfessionalActivity[]));
       }
 
       setLoading(false);
@@ -112,10 +123,10 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
         return (
           text.includes(search.trim().toLowerCase()) &&
-          (compact || matchesSurgeryFilter(surgery, eventsBySurgery[surgery.id] ?? [], filter))
+          (compact || matchesSurgeryFilter(surgery, eventsBySurgery[surgery.id] ?? [], filter, activitiesBySurgery[surgery.id]))
         );
       }),
-    [compact, eventsBySurgery, filter, search, surgeries]
+    [activitiesBySurgery, compact, eventsBySurgery, filter, search, surgeries]
   );
 
   function selectFilter(nextFilter: SurgeryFilter) {
@@ -211,7 +222,9 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-semibold text-ink">{surgery.procedure}</h3>
                     <ClinicalStatusBadge surgery={surgery} evolutionEvents={evolutionEvents} />
-                    <PaymentBadge surgery={surgery} />
+                    {surgery.practice_setting === "private" ? <Badge tone="blue">Privada</Badge> : null}
+                    {surgery.practice_setting === "public" ? <Badge>Pública</Badge> : null}
+                    <PaymentBadge surgery={surgery} activity={activitiesBySurgery[surgery.id]} />
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-graphite">
@@ -240,10 +253,9 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
   );
 }
 
-function PaymentBadge({ surgery }: { surgery: Surgery }) {
-  if (surgery.is_paid) return <Badge tone="green">Cobrada</Badge>;
-  if (surgery.is_invoiced) return <Badge tone="orange">Pendiente de cobro</Badge>;
-  return <Badge>Sin facturar</Badge>;
+function PaymentBadge({ surgery, activity }: { surgery: Surgery; activity?: ProfessionalActivity }) {
+  const financial = getFinancialSnapshot(surgery, activity);
+  return financial ? <FinancialStatusBadge status={financial.status} /> : null;
 }
 
 function formatDate(value: string) {

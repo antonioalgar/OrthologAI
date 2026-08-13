@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BadgeEuro, BookOpen, CalendarDays, FileText, Hospital, Lightbulb, Pencil, Scissors, UserRound } from "lucide-react";
+import { BookOpen, CalendarDays, FileText, Hospital, Lightbulb, Pencil, Scissors, UserRound } from "lucide-react";
 import { AuthGate } from "@/components/auth-gate";
 import { ClinicalStatusBadge, ClinicalStatusSummary } from "@/components/clinical-status-badge";
 import { EvolutionTimeline } from "@/components/evolution-timeline";
 import { FieldGrid, SurgeryBlock } from "@/components/surgery-block";
 import { SurgeryImageManager } from "@/components/surgery-image-manager";
+import { FinancialStatusBadge, SurgeryFinanceSummary } from "@/components/surgery-finance-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
-import { formatCurrency } from "@/lib/utils";
+import type { ProfessionalActivity, Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
 
 export default function SurgeryDetailPage() {
   return (
@@ -27,6 +27,7 @@ export default function SurgeryDetailPage() {
 function SurgeryDetail() {
   const params = useParams<{ surgeryId: string }>();
   const [surgery, setSurgery] = useState<Surgery | null>(null);
+  const [professionalActivity, setProfessionalActivity] = useState<ProfessionalActivity | null>(null);
   const [evolutionEvents, setEvolutionEvents] = useState<SurgeryEvolutionEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -38,16 +39,35 @@ function SurgeryDetail() {
       return;
     }
 
-    supabase
-      .from("surgeries")
-      .select("*")
-      .eq("id", params.surgeryId)
-      .single()
-      .then(({ data, error: queryError }) => {
-        if (queryError) setError(queryError.message);
-        setSurgery((data ?? null) as Surgery | null);
+    const supabaseClient = supabase;
+
+    async function load() {
+      const { data, error: queryError } = await supabaseClient
+        .from("surgeries")
+        .select("*")
+        .eq("id", params.surgeryId)
+        .single();
+
+      if (queryError) {
+        setError(queryError.message);
         setLoading(false);
-      });
+        return;
+      }
+
+      setSurgery((data ?? null) as Surgery | null);
+
+      const { data: activityData, error: activityError } = await supabaseClient
+        .from("professional_activities")
+        .select("*")
+        .eq("surgery_id", params.surgeryId)
+        .maybeSingle();
+
+      if (activityError) console.error("Error cargando actividad profesional:", activityError);
+      setProfessionalActivity((activityData ?? null) as ProfessionalActivity | null);
+      setLoading(false);
+    }
+
+    load();
   }, [params.surgeryId]);
 
   if (loading) {
@@ -65,7 +85,10 @@ function SurgeryDetail() {
           <div className="mb-4 flex flex-wrap gap-2">
             <Badge tone="blue">Cirugia real</Badge>
             <ClinicalStatusBadge surgery={surgery} evolutionEvents={evolutionEvents} />
-            {surgery.is_paid ? <Badge tone="green">Cobrado</Badge> : surgery.is_invoiced ? <Badge tone="orange">Facturado</Badge> : <Badge>Sin facturar</Badge>}
+            {surgery.practice_setting === "public" ? <Badge>Pública</Badge> : null}
+            {surgery.practice_setting !== "public" ? (
+              <FinancialStatusBadge status={professionalActivity?.billing_status ?? (surgery.is_paid ? "paid" : surgery.is_invoiced ? "invoiced" : "not_invoiced")} />
+            ) : null}
           </div>
           <h1 className="max-w-4xl text-3xl font-semibold tracking-normal text-ink sm:text-5xl">{surgery.procedure}</h1>
           <p className="mt-4 max-w-3xl text-base leading-7 text-graphite">{surgery.diagnosis || "Sin diagnostico registrado todavia."}</p>
@@ -78,9 +101,7 @@ function SurgeryDetail() {
               { label: "Hospital", value: surgery.hospital || "No registrado" },
               { label: "Cirujano principal", value: surgery.lead_surgeon || "No registrado" },
               { label: "Mi rol", value: surgery.my_role || "No registrado" },
-              { label: "Pago", value: surgery.payment_amount ? formatCurrency(Number(surgery.payment_amount)) : "No registrado" },
-              { label: "Facturado", value: surgery.is_invoiced ? "Si" : "No" },
-              { label: "Cobrado", value: surgery.is_paid ? "Si" : "No" }
+              { label: "Actividad", value: surgery.practice_setting === "private" ? "Privada" : surgery.practice_setting === "public" ? "Pública" : "Sin clasificar" }
             ]}
           />
         </SurgeryBlock>
@@ -113,6 +134,7 @@ function SurgeryDetail() {
 
       <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
         <ClinicalStatusSummary surgery={surgery} evolutionEvents={evolutionEvents} />
+        <SurgeryFinanceSummary surgery={surgery} activity={professionalActivity} />
         <Card>
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Resumen del caso</h2>
@@ -128,7 +150,6 @@ function SurgeryDetail() {
             <SideRow icon={<Hospital className="size-4" />} label="Hospital" value={surgery.hospital || "No registrado"} />
             <SideRow icon={<Scissors className="size-4" />} label="Procedimiento" value={surgery.procedure} />
             <SideRow icon={<UserRound className="size-4" />} label="Rol" value={surgery.my_role || "No registrado"} />
-            <SideRow icon={<BadgeEuro className="size-4" />} label="Pago" value={surgery.payment_amount ? formatCurrency(Number(surgery.payment_amount)) : "No registrado"} />
           </div>
         </Card>
       </aside>

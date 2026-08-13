@@ -8,6 +8,7 @@ export type Surgery = {
   payment_amount: number | null;
   is_invoiced: boolean;
   is_paid: boolean;
+  practice_setting: PracticeSetting | null;
   patient_identifier: string | null;
   patient_age: number | null;
   patient_sex: string | null;
@@ -33,6 +34,7 @@ export type SurgeryFormValues = {
   payment_amount: string;
   is_invoiced: boolean;
   is_paid: boolean;
+  practice_setting: PracticeSetting | "";
   patient_identifier: string;
   patient_age: string;
   patient_sex: string;
@@ -46,6 +48,53 @@ export type SurgeryFormValues = {
   surgical_observations: string;
   lessons_learned: string;
   senior_surgeon_pearls: string;
+};
+
+export type PracticeSetting = "public" | "private";
+
+export type ProfessionalActivityType =
+  | "surgery"
+  | "consultation"
+  | "follow_up"
+  | "injection"
+  | "prp"
+  | "outpatient_procedure"
+  | "other";
+
+export type PayerType = "insurance" | "private_patient" | "other";
+
+export type BillingStatus = "not_invoiced" | "invoiced" | "paid" | "issue";
+
+export type ProfessionalActivity = {
+  id: string;
+  user_id: string;
+  surgery_id: string | null;
+  activity_type: ProfessionalActivityType;
+  activity_date: string;
+  payer_type: PayerType | null;
+  payer_name: string | null;
+  expected_amount: number | null;
+  invoiced_amount: number | null;
+  received_amount: number | null;
+  invoice_date: string | null;
+  payment_date: string | null;
+  billing_status: BillingStatus;
+  billing_notes: string | null;
+  currency: "EUR";
+  created_at: string;
+  updated_at: string;
+};
+
+export type ProfessionalActivityFormValues = {
+  payer_type: PayerType | "";
+  payer_name: string;
+  expected_amount: string;
+  invoiced_amount: string;
+  received_amount: string;
+  invoice_date: string;
+  payment_date: string;
+  billing_status: BillingStatus;
+  billing_notes: string;
 };
 
 export type SurgeryImage = {

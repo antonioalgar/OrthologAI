@@ -3,11 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Save, Trash2 } from "lucide-react";
+import { SurgeryFinanceFields } from "@/components/surgery-finance-fields";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { buildFieldSuggestions, type SuggestionField } from "@/lib/surgeries/history";
+import { getLegacyPaymentFlags, professionalActivityToFormValues } from "@/lib/surgeries/finance";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { FieldSuggestion, Surgery, SurgeryFormValues } from "@/lib/surgeries/types";
+import type { FieldSuggestion, ProfessionalActivity, ProfessionalActivityFormValues, Surgery, SurgeryFormValues } from "@/lib/surgeries/types";
 
 const initialValues: SurgeryFormValues = {
   surgery_date: "",
@@ -17,6 +19,7 @@ const initialValues: SurgeryFormValues = {
   payment_amount: "",
   is_invoiced: false,
   is_paid: false,
+  practice_setting: "",
   patient_identifier: "",
   patient_age: "",
   patient_sex: "",
@@ -32,6 +35,18 @@ const initialValues: SurgeryFormValues = {
   senior_surgeon_pearls: ""
 };
 
+const initialFinanceValues: ProfessionalActivityFormValues = {
+  payer_type: "",
+  payer_name: "",
+  expected_amount: "",
+  invoiced_amount: "",
+  received_amount: "",
+  invoice_date: "",
+  payment_date: "",
+  billing_status: "not_invoiced",
+  billing_notes: ""
+};
+
 export function SurgeryForm({
   initialSurgery,
   mode = "create"
@@ -41,6 +56,8 @@ export function SurgeryForm({
 }) {
   const router = useRouter();
   const [values, setValues] = useState(() => (initialSurgery ? surgeryToFormValues(initialSurgery) : initialValues));
+  const [financeValues, setFinanceValues] = useState<ProfessionalActivityFormValues>(initialFinanceValues);
+  const [financeLoading, setFinanceLoading] = useState(Boolean(initialSurgery));
   const [previousSurgeries, setPreviousSurgeries] = useState<Surgery[]>([]);
   const [favorites, setFavorites] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
@@ -86,6 +103,40 @@ export function SurgeryForm({
       ignore = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!initialSurgery) {
+      setFinanceLoading(false);
+      return;
+    }
+    const currentSurgery = initialSurgery;
+
+    let ignore = false;
+
+    async function loadProfessionalActivity() {
+      const supabase = createBrowserSupabaseClient();
+      if (!supabase) {
+        setFinanceLoading(false);
+        return;
+      }
+
+      const { data, error: activityError } = await supabase
+        .from("professional_activities")
+        .select("*")
+        .eq("surgery_id", currentSurgery.id)
+        .maybeSingle();
+
+      if (ignore) return;
+      if (activityError) console.error("Error cargando actividad profesional:", activityError);
+      setFinanceValues(professionalActivityToFormValues((data as ProfessionalActivity | null) ?? null, currentSurgery));
+      setFinanceLoading(false);
+    }
+
+    loadProfessionalActivity();
+    return () => {
+      ignore = true;
+    };
+  }, [initialSurgery]);
 
   useEffect(() => {
     if (initialSurgery) {
@@ -149,15 +200,22 @@ export function SurgeryForm({
       return;
     }
 
+    const legacyFlags = values.practice_setting === "private"
+      ? getLegacyPaymentFlags(financeValues, initialSurgery)
+      : { is_invoiced: values.is_invoiced, is_paid: values.is_paid };
+
     const payload = {
       user_id: userData.user.id,
       surgery_date: values.surgery_date,
       hospital: emptyToNull(values.hospital),
       lead_surgeon: emptyToNull(values.lead_surgeon),
       my_role: emptyToNull(values.my_role),
-      payment_amount: values.payment_amount ? Number(values.payment_amount) : null,
-      is_invoiced: values.is_invoiced,
-      is_paid: values.is_paid,
+      payment_amount: values.practice_setting === "private"
+        ? toNullableNumber(financeValues.expected_amount)
+        : values.payment_amount ? Number(values.payment_amount) : null,
+      is_invoiced: legacyFlags.is_invoiced,
+      is_paid: legacyFlags.is_paid,
+      practice_setting: values.practice_setting || null,
       patient_identifier: emptyToNull(values.patient_identifier),
       patient_age: values.patient_age ? Number(values.patient_age) : null,
       patient_sex: emptyToNull(values.patient_sex),
@@ -183,12 +241,80 @@ export function SurgeryForm({
             .select("id")
             .single()
         : await supabase.from("surgeries").insert(payload).select("id").single();
-    setSaving(false);
-
     if (result.error) {
+      setSaving(false);
       setError(result.error.message);
       return;
     }
+
+    if (values.practice_setting === "private") {
+      const activityPayload = {
+        user_id: userData.user.id,
+        surgery_id: result.data.id,
+        activity_type: "surgery",
+        activity_date: values.surgery_date,
+        payer_type: financeValues.payer_type || null,
+        payer_name: emptyToNull(financeValues.payer_name),
+        expected_amount: toNullableNumber(financeValues.expected_amount),
+        invoiced_amount: toNullableNumber(financeValues.invoiced_amount),
+        received_amount: toNullableNumber(financeValues.received_amount),
+        invoice_date: financeValues.invoice_date || null,
+        payment_date: financeValues.payment_date || null,
+        billing_status: financeValues.billing_status,
+        billing_notes: emptyToNull(financeValues.billing_notes),
+        currency: "EUR"
+      };
+
+      const { data: existingActivity, error: lookupError } = await supabase
+        .from("professional_activities")
+        .select("id")
+        .eq("surgery_id", result.data.id)
+        .eq("activity_type", "surgery")
+        .maybeSingle();
+
+      if (lookupError) {
+        setSaving(false);
+        setError(`La cirugía se guardó, pero no se pudo consultar la gestión económica: ${lookupError.message}`);
+        return;
+      }
+
+      let activityResult = existingActivity
+        ? await supabase
+            .from("professional_activities")
+            .update(activityPayload)
+            .eq("id", existingActivity.id)
+            .eq("user_id", userData.user.id)
+        : await supabase.from("professional_activities").insert(activityPayload);
+      let activityError = activityResult.error;
+
+      if (!existingActivity && activityError?.code === "23505") {
+        const { data: concurrentActivity, error: concurrentLookupError } = await supabase
+          .from("professional_activities")
+          .select("id")
+          .eq("surgery_id", result.data.id)
+          .eq("activity_type", "surgery")
+          .single();
+
+        if (concurrentLookupError) {
+          activityError = concurrentLookupError;
+        } else {
+          activityResult = await supabase
+            .from("professional_activities")
+            .update(activityPayload)
+            .eq("id", concurrentActivity.id)
+            .eq("user_id", userData.user.id);
+          activityError = activityResult.error;
+        }
+      }
+
+      if (activityError) {
+        setSaving(false);
+        setError(`La cirugía se guardó, pero no la gestión económica: ${activityError.message}`);
+        return;
+      }
+    }
+
+    setSaving(false);
 
     router.push(`/surgeries/${result.data.id}`);
     router.refresh();
@@ -313,22 +439,13 @@ export function SurgeryForm({
         </div>
       </section>
 
-      <section className="paper-panel rounded-lg p-5">
-        <h2 className="text-lg font-semibold">Facturacion simple</h2>
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <Field label="Pago">
-            <input className={inputClass} type="number" step="0.01" value={values.payment_amount} onChange={(event) => update("payment_amount", event.target.value)} />
-          </Field>
-          <label className="flex items-center gap-3 rounded-lg border border-line bg-white p-4 text-sm font-medium">
-            <input type="checkbox" checked={values.is_invoiced} onChange={(event) => update("is_invoiced", event.target.checked)} />
-            Facturado
-          </label>
-          <label className="flex items-center gap-3 rounded-lg border border-line bg-white p-4 text-sm font-medium">
-            <input type="checkbox" checked={values.is_paid} onChange={(event) => update("is_paid", event.target.checked)} />
-            Cobrado
-          </label>
-        </div>
-      </section>
+      <SurgeryFinanceFields
+        practiceSetting={values.practice_setting}
+        onPracticeSettingChange={(practiceSetting) => update("practice_setting", practiceSetting)}
+        values={financeValues}
+        onChange={setFinanceValues}
+        loading={financeLoading}
+      />
 
       {error ? <p className="rounded-lg border border-orange-200 bg-orange-50 p-4 text-sm text-ember">{error}</p> : null}
 
@@ -438,6 +555,7 @@ function surgeryToFormValues(surgery: Surgery): SurgeryFormValues {
     payment_amount: surgery.payment_amount == null ? "" : String(surgery.payment_amount),
     is_invoiced: surgery.is_invoiced,
     is_paid: surgery.is_paid,
+    practice_setting: surgery.practice_setting ?? "",
     patient_identifier: surgery.patient_identifier ?? "",
     patient_age: surgery.patient_age == null ? "" : String(surgery.patient_age),
     patient_sex: surgery.patient_sex ?? "",
@@ -452,6 +570,10 @@ function surgeryToFormValues(surgery: Surgery): SurgeryFormValues {
     lessons_learned: surgery.lessons_learned ?? "",
     senior_surgeon_pearls: surgery.senior_surgeon_pearls ?? ""
   };
+}
+
+function toNullableNumber(value: string) {
+  return value === "" ? null : Number(value);
 }
 
 const inputClass = "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none focus:border-cobalt";

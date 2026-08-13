@@ -5,6 +5,8 @@ import {
   isRegistrationIncomplete
 } from "@/lib/surgeries/evolution";
 import type { Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
+import type { ProfessionalActivity } from "@/lib/surgeries/types";
+import { getFinancialSnapshot } from "@/lib/surgeries/finance";
 
 export const surgeryFilterValues = [
   "all",
@@ -16,7 +18,10 @@ export const surgeryFilterValues = [
   "incomplete",
   "not-invoiced",
   "unpaid",
-  "paid"
+  "paid",
+  "issue",
+  "private",
+  "public"
 ] as const;
 
 export type SurgeryFilter = (typeof surgeryFilterValues)[number];
@@ -31,7 +36,10 @@ export const surgeryFilterLabels: Record<SurgeryFilter, string> = {
   incomplete: "Incompletas",
   "not-invoiced": "Sin facturar",
   unpaid: "Pendientes de cobro",
-  paid: "Cobradas"
+  paid: "Cobradas",
+  issue: "Incidencia",
+  private: "Privadas",
+  public: "Públicas"
 };
 
 export function isSurgeryFilter(value: string | null): value is SurgeryFilter {
@@ -41,7 +49,8 @@ export function isSurgeryFilter(value: string | null): value is SurgeryFilter {
 export function matchesSurgeryFilter(
   surgery: Surgery,
   events: SurgeryEvolutionEvent[],
-  filter: SurgeryFilter
+  filter: SurgeryFilter,
+  activity?: ProfessionalActivity | null
 ) {
   const clinicalStatus = getClinicalStatus(surgery, events);
   const nextReview = getNextEvolutionEvent(surgery, events);
@@ -56,9 +65,14 @@ export function matchesSurgeryFilter(
   if (filter === "followup") return clinicalStatus === "followup";
   if (filter === "closed") return clinicalStatus === "closed";
   if (filter === "incomplete") return isRegistrationIncomplete(surgery);
-  if (filter === "not-invoiced") return !surgery.is_invoiced && !surgery.is_paid;
-  if (filter === "unpaid") return surgery.is_invoiced && !surgery.is_paid;
-  return surgery.is_paid;
+  if (filter === "private") return surgery.practice_setting === "private";
+  if (filter === "public") return surgery.practice_setting === "public";
+
+  const financial = getFinancialSnapshot(surgery, activity);
+  if (filter === "not-invoiced") return financial?.status === "not_invoiced";
+  if (filter === "unpaid") return financial?.status === "invoiced";
+  if (filter === "paid") return financial?.status === "paid";
+  return financial?.status === "issue";
 }
 
 export function groupEvolutionEvents(events: SurgeryEvolutionEvent[]) {
@@ -66,6 +80,13 @@ export function groupEvolutionEvents(events: SurgeryEvolutionEvent[]) {
     grouped[event.surgery_id] = [...(grouped[event.surgery_id] ?? []), event].sort((a, b) =>
       a.scheduled_date.localeCompare(b.scheduled_date)
     );
+    return grouped;
+  }, {});
+}
+
+export function groupProfessionalActivities(activities: ProfessionalActivity[]) {
+  return activities.reduce<Record<string, ProfessionalActivity>>((grouped, activity) => {
+    if (activity.surgery_id) grouped[activity.surgery_id] = activity;
     return grouped;
   }, {});
 }
