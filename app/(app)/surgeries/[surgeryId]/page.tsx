@@ -9,6 +9,7 @@ import { ClinicalStatusBadge, ClinicalStatusSummary } from "@/components/clinica
 import { EvolutionTimeline } from "@/components/evolution-timeline";
 import { FieldGrid, SurgeryBlock } from "@/components/surgery-block";
 import { SurgeryImageManager } from "@/components/surgery-image-manager";
+import { SurgeryAttention } from "@/components/surgery-attention";
 import { FinancialStatusBadge, SurgeryFinanceSummary } from "@/components/surgery-finance-summary";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -134,6 +135,7 @@ function SurgeryDetail() {
 
       <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
         <ClinicalStatusSummary surgery={surgery} evolutionEvents={evolutionEvents} />
+        <SurgeryAttention surgery={surgery} onChange={setSurgery} />
         <SurgeryFinanceSummary surgery={surgery} activity={professionalActivity} />
         <Card>
           <div className="flex items-center justify-between gap-3">

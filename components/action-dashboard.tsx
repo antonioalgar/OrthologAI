@@ -13,6 +13,7 @@ import { formatCurrency } from "@/lib/utils";
 
 const attentionCards: DashboardCard[] = [
   { filter: "overdue", label: "Revisiones atrasadas", description: "Controles pendientes cuya fecha ya ha pasado", icon: Clock3, emphasis: "urgent" },
+  { filter: "attention", label: "Requieren atención", description: "Casos marcados para vigilancia o revisión especial", icon: AlertTriangle, emphasis: "urgent" },
   { filter: "upcoming", label: "Próximas revisiones", description: "Siguientes controles pendientes programados", icon: CalendarClock },
   { filter: "incomplete", label: "Casos incompletos", description: "Registros con datos básicos por completar", icon: FileWarning },
   { filter: "followup", label: "En seguimiento", description: "Casos clínicos todavía abiertos", icon: Hourglass }
@@ -112,7 +113,7 @@ export function ActionDashboard() {
     <div className="space-y-6">
       <section>
         <SectionTitle eyebrow="Prioridad" title="Necesitan atención" />
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {attentionCards.map((card) => <ActionCard key={card.filter} card={card} count={counts[card.filter] ?? 0} />)}
         </div>
       </section>

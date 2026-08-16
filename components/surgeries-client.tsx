@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, CalendarClock, Hospital, Plus, Search, Stethoscope } from "lucide-react";
+import { AlertTriangle, ArrowRight, CalendarClock, Hospital, Plus, Search, Stethoscope } from "lucide-react";
 import { ClinicalStatusBadge } from "@/components/clinical-status-badge";
 import { FinancialStatusBadge } from "@/components/surgery-finance-summary";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,7 @@ const visibleFilters: SurgeryFilter[] = [
   "all",
   "pending",
   "overdue",
+  "attention",
   "upcoming",
   "followup",
   "closed",
@@ -114,6 +115,7 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
           surgery.patient_identifier,
           surgery.implants,
           surgery.complications,
+          surgery.attention_reason,
           surgery.lessons_learned,
           surgery.senior_surgeon_pearls
         ]
@@ -222,6 +224,12 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-semibold text-ink">{surgery.procedure}</h3>
                     <ClinicalStatusBadge surgery={surgery} evolutionEvents={evolutionEvents} />
+                    {surgery.attention_required ? (
+                      <Badge tone="orange" className="gap-1.5">
+                        <AlertTriangle className="size-3" />
+                        Requiere atención
+                      </Badge>
+                    ) : null}
                     {surgery.practice_setting === "private" ? <Badge tone="blue">Privada</Badge> : null}
                     {surgery.practice_setting === "public" ? <Badge>Pública</Badge> : null}
                     <PaymentBadge surgery={surgery} activity={activitiesBySurgery[surgery.id]} />
@@ -238,6 +246,11 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
                       <CalendarClock className="size-3.5" />
                       {isEvolutionEventOverdue(nextReview) ? "Revisión atrasada" : "Próxima revisión"}: {formatDate(nextReview.scheduled_date)}
                     </div>
+                  ) : null}
+                  {surgery.attention_required && surgery.attention_reason ? (
+                    <p className="mt-2 max-w-2xl truncate text-xs text-ember" title={surgery.attention_reason}>
+                      {surgery.attention_reason}
+                    </p>
                   ) : null}
                 </div>
 

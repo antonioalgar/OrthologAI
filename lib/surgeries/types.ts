@@ -19,6 +19,10 @@ export type Surgery = {
   procedure: string;
   implants: string | null;
   complications: string | null;
+  attention_required: boolean;
+  attention_reason: string | null;
+  attention_created_at: string | null;
+  attention_resolved_at: string | null;
   surgical_observations: string | null;
   lessons_learned: string | null;
   senior_surgeon_pearls: string | null;

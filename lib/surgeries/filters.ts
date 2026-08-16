@@ -12,6 +12,7 @@ export const surgeryFilterValues = [
   "all",
   "pending",
   "overdue",
+  "attention",
   "upcoming",
   "followup",
   "closed",
@@ -30,6 +31,7 @@ export const surgeryFilterLabels: Record<SurgeryFilter, string> = {
   all: "Todas",
   pending: "Pendientes",
   overdue: "Revisión atrasada",
+  attention: "Requieren atención",
   upcoming: "Próximas revisiones",
   followup: "En seguimiento",
   closed: "Alta",
@@ -61,6 +63,7 @@ export function matchesSurgeryFilter(
     return isRegistrationIncomplete(surgery) || clinicalStatus === "active_complication" || Boolean(nextReview);
   }
   if (filter === "overdue") return overdue;
+  if (filter === "attention") return surgery.attention_required === true;
   if (filter === "upcoming") return Boolean(nextReview) && !overdue;
   if (filter === "followup") return clinicalStatus === "followup";
   if (filter === "closed") return clinicalStatus === "closed";
