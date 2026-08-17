@@ -147,3 +147,16 @@ export type SurgeryProcedure = {
   created_at: string;
   updated_at: string;
 };
+
+export type UserProcedure = {
+  id: string;
+  user_id: string;
+  procedure_key: string;
+  label: string;
+  normalized_label: string;
+  family: string;
+  is_active: boolean;
+  archived_at: string | null;
+  created_at: string;
+  updated_at: string;
+};

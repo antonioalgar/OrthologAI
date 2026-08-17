@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, BriefcaseMedical, ClipboardList, Stethoscope, Users } from "lucide-react";
 import { Card, SectionTitle } from "@/components/ui/card";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import { normalizedRole, procedureFamilies, procedureTaxonomy, surgeryMatchesActivityFilters } from "@/lib/surgeries/procedures";
+import { getProcedureFamilyLabel, normalizedRole, surgeryMatchesActivityFilters } from "@/lib/surgeries/procedures";
 import type { Surgery, SurgeryProcedure } from "@/lib/surgeries/types";
 
 type Filters = {
@@ -55,10 +55,13 @@ export function ActivityLogbook() {
   const filteredSurgeries = useMemo(() => surgeries.filter((surgery) => surgeryMatchesActivityFilters(surgery, filters)), [filters, surgeries]);
   const filteredIds = useMemo(() => new Set(filteredSurgeries.map((surgery) => surgery.id)), [filteredSurgeries]);
   const filteredProcedures = useMemo(() => procedures.filter((procedure) => filteredIds.has(procedure.surgery_id)), [filteredIds, procedures]);
-  const counts = useMemo(() => filteredProcedures.reduce<Record<string, number>>((result, procedure) => {
-    result[procedure.procedure_key] = (result[procedure.procedure_key] ?? 0) + 1;
+  const procedureSummaries = useMemo(() => Object.values(filteredProcedures.reduce<Record<string, { key: string; label: string; family: string; count: number }>>((result, procedure) => {
+    const current = result[procedure.procedure_key];
+    result[procedure.procedure_key] = current
+      ? { ...current, count: current.count + 1 }
+      : { key: procedure.procedure_key, label: procedure.procedure_label, family: procedure.procedure_family, count: 1 };
     return result;
-  }, {}), [filteredProcedures]);
+  }, {})).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label)), [filteredProcedures]);
 
   if (loading) return <Card>Cargando actividad quirúrgica...</Card>;
   if (error) return <Card className="text-sm text-ember">{error}</Card>;
@@ -109,12 +112,12 @@ export function ActivityLogbook() {
         <SectionTitle eyebrow="Logbook" title="Procedimientos" />
         {!classificationAvailable ? (
           <Card className="text-sm text-graphite">La clasificación estructurada estará disponible cuando se aplique la migración 0006. Los casos existentes se conservan sin cambios.</Card>
-        ) : Object.keys(counts).length ? (
+        ) : procedureSummaries.length ? (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {procedureTaxonomy.filter((item) => counts[item.key]).sort((a, b) => (counts[b.key] ?? 0) - (counts[a.key] ?? 0)).map((item) => (
+            {procedureSummaries.map((item) => (
               <Link key={item.key} href={`/surgeries?procedure=${encodeURIComponent(item.key)}`} className="group flex items-center justify-between gap-4 rounded-lg border border-line bg-white/90 p-4 shadow-sm transition hover:border-cobalt/30 hover:shadow-soft">
-                <div><p className="font-semibold text-ink">{item.label}</p><p className="mt-1 text-xs text-graphite">{procedureFamilies[item.family]}</p></div>
-                <div className="flex items-center gap-3"><span className="text-2xl font-semibold text-ink">{counts[item.key]}</span><ArrowRight className="size-4 text-cobalt" /></div>
+                <div><p className="font-semibold text-ink">{item.label}</p><p className="mt-1 text-xs text-graphite">{getProcedureFamilyLabel(item.family)}</p></div>
+                <div className="flex items-center gap-3"><span className="text-2xl font-semibold text-ink">{item.count}</span><ArrowRight className="size-4 text-cobalt" /></div>
               </Link>
             ))}
           </div>

@@ -9,9 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { buildFieldSuggestions, type SuggestionField } from "@/lib/surgeries/history";
 import { getLegacyPaymentFlags, professionalActivityToFormValues } from "@/lib/surgeries/finance";
-import { getProcedureDefinition } from "@/lib/surgeries/procedures";
+import { getAvailableProcedureCatalog, normalizeProcedureLabel, type CustomProcedureFamily } from "@/lib/surgeries/procedures";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { FieldSuggestion, ProfessionalActivity, ProfessionalActivityFormValues, Surgery, SurgeryFormValues } from "@/lib/surgeries/types";
+import type { FieldSuggestion, ProfessionalActivity, ProfessionalActivityFormValues, Surgery, SurgeryFormValues, UserProcedure } from "@/lib/surgeries/types";
 
 const initialValues: SurgeryFormValues = {
   surgery_date: "",
@@ -63,6 +63,7 @@ export function SurgeryForm({
   const [structuredProcedureKeys, setStructuredProcedureKeys] = useState<string[]>([]);
   const [proceduresLoading, setProceduresLoading] = useState(Boolean(initialSurgery));
   const [proceduresAvailable, setProceduresAvailable] = useState(true);
+  const [userProcedures, setUserProcedures] = useState<UserProcedure[]>([]);
   const [previousSurgeries, setPreviousSurgeries] = useState<Surgery[]>([]);
   const [favorites, setFavorites] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
@@ -142,6 +143,24 @@ export function SurgeryForm({
       ignore = true;
     };
   }, [initialSurgery]);
+
+  useEffect(() => {
+    let ignore = false;
+    async function loadUserProcedures() {
+      const supabase = createBrowserSupabaseClient();
+      if (!supabase) return;
+      const { data, error: catalogError } = await supabase
+        .from("user_procedures")
+        .select("*")
+        .eq("is_active", true)
+        .order("label");
+      if (ignore) return;
+      if (catalogError) console.error("Catálogo personal no disponible todavía:", catalogError);
+      else setUserProcedures((data ?? []) as UserProcedure[]);
+    }
+    loadUserProcedures();
+    return () => { ignore = true; };
+  }, []);
 
   useEffect(() => {
     if (!initialSurgery) {
@@ -285,7 +304,7 @@ export function SurgeryForm({
 
     const shouldSyncProcedures = proceduresAvailable && (mode === "edit" || structuredProcedureKeys.length > 0);
     const proceduresError = shouldSyncProcedures
-      ? await syncStructuredProcedures(supabase, result.data.id, userData.user.id, structuredProcedureKeys)
+      ? await syncStructuredProcedures(supabase, result.data.id, userData.user.id, structuredProcedureKeys, userProcedures)
       : null;
     if (proceduresError) {
       setSaving(false);
@@ -434,7 +453,13 @@ export function SurgeryForm({
           <Combobox label="Hospital" value={values.hospital} onChange={(value) => update("hospital", value)} suggestions={suggestions.hospital} placeholder="Ej. Hospital Vithas Madrid" />
           <Combobox label="Mi rol" value={values.my_role} onChange={(value) => update("my_role", value)} suggestions={suggestions.my_role} placeholder="Primer cirujano, ayudante..." />
         </div>
-        <StructuredProcedureSelector value={structuredProcedureKeys} onChange={setStructuredProcedureKeys} loading={proceduresLoading} />
+        <StructuredProcedureSelector
+          value={structuredProcedureKeys}
+          onChange={setStructuredProcedureKeys}
+          customProcedures={userProcedures}
+          onCreateCustom={createCustomProcedure}
+          loading={proceduresLoading}
+        />
       </section>
 
       <section className="paper-panel rounded-lg p-5">
@@ -559,6 +584,54 @@ export function SurgeryForm({
       ) : null}
     </form>
   );
+
+  async function createCustomProcedure(label: string, family: CustomProcedureFamily) {
+    const supabase = createBrowserSupabaseClient();
+    if (!supabase) { setError("Supabase no está configurado."); return null; }
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user) { setError(userError?.message ?? "No hay usuario autenticado."); return null; }
+
+    const normalizedLabel = normalizeProcedureLabel(label);
+    const existing = userProcedures.find((item) => item.normalized_label === normalizedLabel && item.is_active);
+    if (existing) return existing;
+
+    const payload = {
+      user_id: userData.user.id,
+      procedure_key: `custom:${crypto.randomUUID()}`,
+      label: label.trim(),
+      normalized_label: normalizedLabel,
+      family,
+      is_active: true,
+      archived_at: null
+    };
+    const { data, error: insertError } = await supabase.from("user_procedures").insert(payload).select("*").single();
+    if (insertError?.code === "23505") {
+      const { data: duplicate, error: duplicateError } = await supabase
+        .from("user_procedures")
+        .select("*")
+        .eq("normalized_label", normalizedLabel)
+        .maybeSingle();
+      if (duplicateError || !duplicate) { setError(duplicateError?.message ?? insertError.message); return null; }
+      let reused = duplicate as UserProcedure;
+      if (!reused.is_active) {
+        const { data: reactivated, error: reactivateError } = await supabase
+          .from("user_procedures")
+          .update({ is_active: true, archived_at: null })
+          .eq("id", reused.id)
+          .eq("user_id", userData.user.id)
+          .select("*")
+          .single();
+        if (reactivateError || !reactivated) { setError(reactivateError?.message ?? "No se pudo reactivar el procedimiento."); return null; }
+        reused = reactivated as UserProcedure;
+      }
+      setUserProcedures((current) => current.some((item) => item.id === reused.id) ? current : [...current, reused]);
+      return reused;
+    }
+    if (insertError || !data) { setError(insertError?.message ?? "No se pudo crear el procedimiento."); return null; }
+    const created = data as UserProcedure;
+    setUserProcedures((current) => [...current, created].sort((a, b) => a.label.localeCompare(b.label)));
+    return created;
+  }
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
@@ -627,7 +700,8 @@ async function syncStructuredProcedures(
   supabase: NonNullable<ReturnType<typeof createBrowserSupabaseClient>>,
   surgeryId: string,
   userId: string,
-  keys: string[]
+  keys: string[],
+  customProcedures: UserProcedure[]
 ) {
   const { data: existing, error: lookupError } = await supabase
     .from("surgery_procedures")
@@ -635,8 +709,9 @@ async function syncStructuredProcedures(
     .eq("surgery_id", surgeryId);
   if (lookupError) return lookupError.message;
 
+  const catalog = getAvailableProcedureCatalog(customProcedures);
   const payload = keys.flatMap((key) => {
-    const definition = getProcedureDefinition(key);
+    const definition = catalog.find((item) => item.key === key);
     return definition ? [{ user_id: userId, surgery_id: surgeryId, procedure_key: definition.key, procedure_label: definition.label, procedure_family: definition.family }] : [];
   });
   if (payload.length) {

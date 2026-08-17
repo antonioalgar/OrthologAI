@@ -1,4 +1,4 @@
-import type { Surgery, SurgeryProcedure } from "@/lib/surgeries/types";
+import type { Surgery, SurgeryProcedure, UserProcedure } from "@/lib/surgeries/types";
 
 export const procedureFamilies = {
   knee_arthroplasty: "Artroplastia de rodilla",
@@ -14,7 +14,8 @@ export type ProcedureFamily = keyof typeof procedureFamilies;
 export type ProcedureDefinition = {
   key: string;
   label: string;
-  family: ProcedureFamily;
+  family: string;
+  source?: "predefined" | "custom";
 };
 
 export const procedureTaxonomy: ProcedureDefinition[] = [
@@ -43,6 +44,52 @@ export const procedureTaxonomy: ProcedureDefinition[] = [
 
 export function getProcedureDefinition(key: string) {
   return procedureTaxonomy.find((item) => item.key === key);
+}
+
+export const customProcedureFamilies = {
+  arthroplasty: "Artroplastia",
+  ligaments: "Ligamentos",
+  meniscus: "Menisco",
+  osteotomy: "Osteotomía",
+  cartilage: "Cartílago",
+  trauma: "Trauma",
+  foot_ankle: "Pie y tobillo",
+  hip: "Cadera",
+  shoulder: "Hombro",
+  elbow: "Codo",
+  hand: "Mano",
+  other: "Otro"
+} as const;
+
+export type CustomProcedureFamily = keyof typeof customProcedureFamilies;
+
+export function getAvailableProcedureCatalog(customProcedures: UserProcedure[]): ProcedureDefinition[] {
+  return [
+    ...procedureTaxonomy.map((item) => ({ ...item, source: "predefined" as const })),
+    ...customProcedures
+      .filter((item) => item.is_active)
+      .map((item) => ({ key: item.procedure_key, label: item.label, family: item.family, source: "custom" as const }))
+  ];
+}
+
+export function normalizeProcedureLabel(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+export function getProcedureFamilyLabel(family: string) {
+  return procedureFamilies[family as ProcedureFamily]
+    ?? customProcedureFamilies[family as CustomProcedureFamily]
+    ?? family;
+}
+
+export function isValidProcedureKey(value: string) {
+  return /^[a-z0-9:_-]{1,100}$/.test(value);
 }
 
 export function groupSurgeryProcedures(rows: SurgeryProcedure[]) {

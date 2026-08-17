@@ -18,7 +18,7 @@ import {
 } from "@/lib/surgeries/filters";
 import { getNextEvolutionEvent, isEvolutionEventOverdue } from "@/lib/surgeries/evolution";
 import { getFinancialSnapshot } from "@/lib/surgeries/finance";
-import { getProcedureDefinition, groupSurgeryProcedures } from "@/lib/surgeries/procedures";
+import { getProcedureDefinition, groupSurgeryProcedures, isValidProcedureKey } from "@/lib/surgeries/procedures";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { ProfessionalActivity, Surgery, SurgeryEvolutionEvent, SurgeryProcedure } from "@/lib/surgeries/types";
 import { cn } from "@/lib/utils";
@@ -58,7 +58,7 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
       const requestedFilter = new URLSearchParams(window.location.search).get("filter");
       const requestedProcedure = new URLSearchParams(window.location.search).get("procedure") ?? "";
       setFilter(isSurgeryFilter(requestedFilter) ? requestedFilter : "all");
-      setProcedureKey(getProcedureDefinition(requestedProcedure) ? requestedProcedure : "");
+      setProcedureKey(isValidProcedureKey(requestedProcedure) ? requestedProcedure : "");
     }
 
     syncFilterFromUrl();
@@ -162,7 +162,8 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
   if (error) return <Card className="text-sm text-ember">{error}</Card>;
 
   const hasActiveFilters = search.trim().length > 0 || filter !== "all" || Boolean(procedureKey);
-  const selectedProcedure = getProcedureDefinition(procedureKey);
+  const selectedProcedure = getProcedureDefinition(procedureKey)
+    ?? Object.values(proceduresBySurgery).flat().find((procedure) => procedure.procedure_key === procedureKey);
 
   return (
     <Card className="p-0">
@@ -206,7 +207,7 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
           </div>
           {selectedProcedure ? (
             <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-cobalt">
-              <span className="font-semibold">Procedimiento: {selectedProcedure.label}</span>
+              <span className="font-semibold">Procedimiento: {"label" in selectedProcedure ? selectedProcedure.label : selectedProcedure.procedure_label}</span>
               <button type="button" className="ml-auto font-semibold underline underline-offset-2" onClick={() => {
                 setProcedureKey("");
                 const url = new URL(window.location.href);
