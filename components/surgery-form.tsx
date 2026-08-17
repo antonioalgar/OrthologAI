@@ -4,10 +4,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Save, Trash2 } from "lucide-react";
 import { SurgeryFinanceFields } from "@/components/surgery-finance-fields";
+import { StructuredProcedureSelector } from "@/components/structured-procedure-selector";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
 import { buildFieldSuggestions, type SuggestionField } from "@/lib/surgeries/history";
 import { getLegacyPaymentFlags, professionalActivityToFormValues } from "@/lib/surgeries/finance";
+import { getProcedureDefinition } from "@/lib/surgeries/procedures";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { FieldSuggestion, ProfessionalActivity, ProfessionalActivityFormValues, Surgery, SurgeryFormValues } from "@/lib/surgeries/types";
 
@@ -58,6 +60,9 @@ export function SurgeryForm({
   const [values, setValues] = useState(() => (initialSurgery ? surgeryToFormValues(initialSurgery) : initialValues));
   const [financeValues, setFinanceValues] = useState<ProfessionalActivityFormValues>(initialFinanceValues);
   const [financeLoading, setFinanceLoading] = useState(Boolean(initialSurgery));
+  const [structuredProcedureKeys, setStructuredProcedureKeys] = useState<string[]>([]);
+  const [proceduresLoading, setProceduresLoading] = useState(Boolean(initialSurgery));
+  const [proceduresAvailable, setProceduresAvailable] = useState(true);
   const [previousSurgeries, setPreviousSurgeries] = useState<Surgery[]>([]);
   const [favorites, setFavorites] = useState<Record<string, string[]>>({});
   const [error, setError] = useState("");
@@ -136,6 +141,37 @@ export function SurgeryForm({
     return () => {
       ignore = true;
     };
+  }, [initialSurgery]);
+
+  useEffect(() => {
+    if (!initialSurgery) {
+      setProceduresLoading(false);
+      return;
+    }
+    const surgeryId = initialSurgery.id;
+    let ignore = false;
+
+    async function loadStructuredProcedures() {
+      const supabase = createBrowserSupabaseClient();
+      if (!supabase) {
+        setProceduresLoading(false);
+        return;
+      }
+      const { data, error: proceduresError } = await supabase
+        .from("surgery_procedures")
+        .select("procedure_key")
+        .eq("surgery_id", surgeryId);
+      if (ignore) return;
+      if (proceduresError) {
+        console.error("Procedimientos estructurados no disponibles todavía:", proceduresError);
+        setProceduresAvailable(false);
+      }
+      else setStructuredProcedureKeys((data ?? []).map((row) => row.procedure_key));
+      setProceduresLoading(false);
+    }
+
+    loadStructuredProcedures();
+    return () => { ignore = true; };
   }, [initialSurgery]);
 
   useEffect(() => {
@@ -244,6 +280,16 @@ export function SurgeryForm({
     if (result.error) {
       setSaving(false);
       setError(result.error.message);
+      return;
+    }
+
+    const shouldSyncProcedures = proceduresAvailable && (mode === "edit" || structuredProcedureKeys.length > 0);
+    const proceduresError = shouldSyncProcedures
+      ? await syncStructuredProcedures(supabase, result.data.id, userData.user.id, structuredProcedureKeys)
+      : null;
+    if (proceduresError) {
+      setSaving(false);
+      setError(`La cirugía se guardó, pero no sus procedimientos estructurados: ${proceduresError}`);
       return;
     }
 
@@ -388,6 +434,7 @@ export function SurgeryForm({
           <Combobox label="Hospital" value={values.hospital} onChange={(value) => update("hospital", value)} suggestions={suggestions.hospital} placeholder="Ej. Hospital Vithas Madrid" />
           <Combobox label="Mi rol" value={values.my_role} onChange={(value) => update("my_role", value)} suggestions={suggestions.my_role} placeholder="Primer cirujano, ayudante..." />
         </div>
+        <StructuredProcedureSelector value={structuredProcedureKeys} onChange={setStructuredProcedureKeys} loading={proceduresLoading} />
       </section>
 
       <section className="paper-panel rounded-lg p-5">
@@ -574,6 +621,35 @@ function surgeryToFormValues(surgery: Surgery): SurgeryFormValues {
 
 function toNullableNumber(value: string) {
   return value === "" ? null : Number(value);
+}
+
+async function syncStructuredProcedures(
+  supabase: NonNullable<ReturnType<typeof createBrowserSupabaseClient>>,
+  surgeryId: string,
+  userId: string,
+  keys: string[]
+) {
+  const { data: existing, error: lookupError } = await supabase
+    .from("surgery_procedures")
+    .select("id,procedure_key")
+    .eq("surgery_id", surgeryId);
+  if (lookupError) return lookupError.message;
+
+  const payload = keys.flatMap((key) => {
+    const definition = getProcedureDefinition(key);
+    return definition ? [{ user_id: userId, surgery_id: surgeryId, procedure_key: definition.key, procedure_label: definition.label, procedure_family: definition.family }] : [];
+  });
+  if (payload.length) {
+    const { error } = await supabase.from("surgery_procedures").upsert(payload, { onConflict: "surgery_id,procedure_key" });
+    if (error) return error.message;
+  }
+
+  const removeIds = (existing ?? []).filter((row) => !keys.includes(row.procedure_key)).map((row) => row.id);
+  if (removeIds.length) {
+    const { error } = await supabase.from("surgery_procedures").delete().in("id", removeIds).eq("user_id", userId);
+    if (error) return error.message;
+  }
+  return null;
 }
 
 const inputClass = "w-full rounded-md border border-line bg-white px-3 py-2 text-sm outline-none focus:border-cobalt";

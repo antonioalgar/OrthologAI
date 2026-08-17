@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:py-8">{children}</div>
       </main>
 
-      <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-5 gap-1 rounded-xl border border-line bg-white/90 p-1 shadow-soft backdrop-blur-xl lg:hidden">
+      <nav className="fixed inset-x-3 bottom-3 z-40 grid grid-cols-4 gap-1 rounded-xl border border-line bg-white/90 p-1 shadow-soft backdrop-blur-xl lg:hidden">
         {navItems.map((item) => {
           const active = pathname.startsWith(item.href);
           const Icon = item.icon;

@@ -18,8 +18,9 @@ import {
 } from "@/lib/surgeries/filters";
 import { getNextEvolutionEvent, isEvolutionEventOverdue } from "@/lib/surgeries/evolution";
 import { getFinancialSnapshot } from "@/lib/surgeries/finance";
+import { getProcedureDefinition, groupSurgeryProcedures } from "@/lib/surgeries/procedures";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { ProfessionalActivity, Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
+import type { ProfessionalActivity, Surgery, SurgeryEvolutionEvent, SurgeryProcedure } from "@/lib/surgeries/types";
 import { cn } from "@/lib/utils";
 
 const visibleFilters: SurgeryFilter[] = [
@@ -43,9 +44,11 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
   const [surgeries, setSurgeries] = useState<Surgery[]>([]);
   const [eventsBySurgery, setEventsBySurgery] = useState<Record<string, SurgeryEvolutionEvent[]>>({});
   const [activitiesBySurgery, setActivitiesBySurgery] = useState<Record<string, ProfessionalActivity>>({});
+  const [proceduresBySurgery, setProceduresBySurgery] = useState<Record<string, SurgeryProcedure[]>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<SurgeryFilter>("all");
+  const [procedureKey, setProcedureKey] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -53,7 +56,9 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
     function syncFilterFromUrl() {
       const requestedFilter = new URLSearchParams(window.location.search).get("filter");
+      const requestedProcedure = new URLSearchParams(window.location.search).get("procedure") ?? "";
       setFilter(isSurgeryFilter(requestedFilter) ? requestedFilter : "all");
+      setProcedureKey(getProcedureDefinition(requestedProcedure) ? requestedProcedure : "");
     }
 
     syncFilterFromUrl();
@@ -86,9 +91,10 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
       if (loadedSurgeries.length > 0) {
         const surgeryIds = loadedSurgeries.map((surgery) => surgery.id);
-        const [eventsResult, activitiesResult] = await Promise.all([
+        const [eventsResult, activitiesResult, proceduresResult] = await Promise.all([
           supabaseClient.from("surgery_evolution_events").select("*").in("surgery_id", surgeryIds),
-          supabaseClient.from("professional_activities").select("*").in("surgery_id", surgeryIds)
+          supabaseClient.from("professional_activities").select("*").in("surgery_id", surgeryIds),
+          supabaseClient.from("surgery_procedures").select("*").in("surgery_id", surgeryIds)
         ]);
 
         if (eventsResult.error) setError(eventsResult.error.message);
@@ -96,6 +102,9 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
         if (activitiesResult.error) console.error("Usando compatibilidad económica legacy:", activitiesResult.error);
         else setActivitiesBySurgery(groupProfessionalActivities((activitiesResult.data ?? []) as ProfessionalActivity[]));
+
+        if (proceduresResult.error) console.error("Clasificación estructurada no disponible:", proceduresResult.error);
+        else setProceduresBySurgery(groupSurgeryProcedures((proceduresResult.data ?? []) as SurgeryProcedure[]));
       }
 
       setLoading(false);
@@ -125,10 +134,11 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
         return (
           text.includes(search.trim().toLowerCase()) &&
+          (!procedureKey || (proceduresBySurgery[surgery.id] ?? []).some((procedure) => procedure.procedure_key === procedureKey)) &&
           (compact || matchesSurgeryFilter(surgery, eventsBySurgery[surgery.id] ?? [], filter, activitiesBySurgery[surgery.id]))
         );
       }),
-    [activitiesBySurgery, compact, eventsBySurgery, filter, search, surgeries]
+    [activitiesBySurgery, compact, eventsBySurgery, filter, procedureKey, proceduresBySurgery, search, surgeries]
   );
 
   function selectFilter(nextFilter: SurgeryFilter) {
@@ -141,13 +151,18 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
 
   function clearFilters() {
     setSearch("");
+    setProcedureKey("");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("procedure");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}`);
     selectFilter("all");
   }
 
   if (loading) return <Card>Cargando cirugías...</Card>;
   if (error) return <Card className="text-sm text-ember">{error}</Card>;
 
-  const hasActiveFilters = search.trim().length > 0 || filter !== "all";
+  const hasActiveFilters = search.trim().length > 0 || filter !== "all" || Boolean(procedureKey);
+  const selectedProcedure = getProcedureDefinition(procedureKey);
 
   return (
     <Card className="p-0">
@@ -189,6 +204,17 @@ export function SurgeriesClient({ compact = false }: { compact?: boolean }) {
               </button>
             ))}
           </div>
+          {selectedProcedure ? (
+            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-md bg-blue-50 px-3 py-2 text-xs text-cobalt">
+              <span className="font-semibold">Procedimiento: {selectedProcedure.label}</span>
+              <button type="button" className="ml-auto font-semibold underline underline-offset-2" onClick={() => {
+                setProcedureKey("");
+                const url = new URL(window.location.href);
+                url.searchParams.delete("procedure");
+                window.history.pushState({}, "", `${url.pathname}${url.search}`);
+              }}>Quitar filtro</button>
+            </div>
+          ) : null}
         </div>
       ) : null}
 

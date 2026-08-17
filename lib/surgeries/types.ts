@@ -136,3 +136,14 @@ export type SurgeryEvolutionEvent = {
   created_at: string;
   updated_at: string;
 };
+
+export type SurgeryProcedure = {
+  id: string;
+  user_id: string;
+  surgery_id: string;
+  procedure_key: string;
+  procedure_label: string;
+  procedure_family: string;
+  created_at: string;
+  updated_at: string;
+};

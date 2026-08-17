@@ -18,6 +18,7 @@ import {
 
 export const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: Activity },
+  { href: "/activity", label: "Actividad", icon: TrendingUp },
   { href: "/surgeries", label: "Registro", icon: ClipboardList },
   { href: "/surgeries/new", label: "Nueva cirugía", icon: Plus }
 ];
