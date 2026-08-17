@@ -1,18 +1,15 @@
 "use client";
 
-import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BookOpen, CalendarDays, FileText, Hospital, Lightbulb, Pencil, Scissors, UserRound } from "lucide-react";
+import { BookOpen, FileText, Lightbulb } from "lucide-react";
 import { AuthGate } from "@/components/auth-gate";
-import { ClinicalStatusBadge, ClinicalStatusSummary } from "@/components/clinical-status-badge";
+import { SurgeryCaseHeader } from "@/components/surgery-case-header";
 import { EvolutionTimeline } from "@/components/evolution-timeline";
 import { FieldGrid, SurgeryBlock } from "@/components/surgery-block";
 import { SurgeryImageManager } from "@/components/surgery-image-manager";
 import { SurgeryAttention } from "@/components/surgery-attention";
-import { FinancialStatusBadge, SurgeryFinanceSummary } from "@/components/surgery-finance-summary";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { SurgeryFinanceSummary } from "@/components/surgery-finance-summary";
 import { Card } from "@/components/ui/card";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import type { ProfessionalActivity, Surgery, SurgeryEvolutionEvent } from "@/lib/surgeries/types";
@@ -80,32 +77,11 @@ function SurgeryDetail() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-      <article className="paper-panel rounded-lg px-5 py-6 sm:px-8 lg:px-12 lg:py-10">
-        <div className="mb-9">
-          <div className="mb-4 flex flex-wrap gap-2">
-            <Badge tone="blue">Cirugia real</Badge>
-            <ClinicalStatusBadge surgery={surgery} evolutionEvents={evolutionEvents} />
-            {surgery.practice_setting === "public" ? <Badge>Pública</Badge> : null}
-            {surgery.practice_setting !== "public" ? (
-              <FinancialStatusBadge status={professionalActivity?.billing_status ?? (surgery.is_paid ? "paid" : surgery.is_invoiced ? "invoiced" : "not_invoiced")} />
-            ) : null}
-          </div>
-          <h1 className="max-w-4xl text-3xl font-semibold tracking-normal text-ink sm:text-5xl">{surgery.procedure}</h1>
-          <p className="mt-4 max-w-3xl text-base leading-7 text-graphite">{surgery.diagnosis || "Sin diagnostico registrado todavia."}</p>
-        </div>
+    <div className="space-y-6">
+      <SurgeryCaseHeader surgery={surgery} evolutionEvents={evolutionEvents} activity={professionalActivity} />
 
-        <SurgeryBlock title="Informacion basica">
-          <FieldGrid
-            items={[
-              { label: "Fecha", value: formatDate(surgery.surgery_date) },
-              { label: "Hospital", value: surgery.hospital || "No registrado" },
-              { label: "Cirujano principal", value: surgery.lead_surgeon || "No registrado" },
-              { label: "Mi rol", value: surgery.my_role || "No registrado" },
-              { label: "Actividad", value: surgery.practice_setting === "private" ? "Privada" : surgery.practice_setting === "public" ? "Pública" : "Sin clasificar" }
-            ]}
-          />
-        </SurgeryBlock>
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <article className="paper-panel rounded-lg px-5 py-6 sm:px-8 lg:px-12 lg:py-10">
 
         <SurgeryBlock title="Paciente">
           <FieldGrid
@@ -120,41 +96,31 @@ function SurgeryDetail() {
           />
         </SurgeryBlock>
 
+        <SurgeryBlock title="Equipo quirúrgico">
+          <FieldGrid items={[{ label: "Cirujano principal", value: surgery.lead_surgeon || "No registrado" }]} />
+        </SurgeryBlock>
+
         <TextBlock title="Diagnostico" value={surgery.diagnosis} />
-        <TextBlock title="Procedimiento" value={surgery.procedure} />
         <TextBlock title="Implantes" value={surgery.implants} />
         <TextBlock title="Complicaciones" value={surgery.complications} />
-        <SurgeryBlock title="Evolucion / Seguimiento">
-          <EvolutionTimeline surgery={surgery} onEventsChange={setEvolutionEvents} />
-        </SurgeryBlock>
+        <div id="evolution" className="scroll-mt-24">
+          <SurgeryBlock title="Evolucion / Seguimiento">
+            <EvolutionTimeline surgery={surgery} onEventsChange={setEvolutionEvents} />
+          </SurgeryBlock>
+        </div>
         <SurgeryImageManager surgeryId={surgery.id} />
         <TextBlock title="Observaciones quirurgicas" value={surgery.surgical_observations} />
         <TextBlock title="Que he aprendido hoy" value={surgery.lessons_learned} icon={<Lightbulb className="size-5 text-ember" />} />
         <TextBlock title="Perlas del adjunto" value={surgery.senior_surgeon_pearls} icon={<BookOpen className="size-5 text-moss" />} />
-      </article>
+        </article>
 
-      <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-        <ClinicalStatusSummary surgery={surgery} evolutionEvents={evolutionEvents} />
-        <SurgeryAttention surgery={surgery} onChange={setSurgery} />
-        <SurgeryFinanceSummary surgery={surgery} activity={professionalActivity} />
-        <Card>
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Resumen del caso</h2>
-            <Link href={`/surgeries/${surgery.id}/edit`}>
-              <Button variant="secondary" className="px-3 py-2">
-                <Pencil className="size-4" />
-                Editar
-              </Button>
-            </Link>
+        <aside className="order-first space-y-4 xl:order-none xl:sticky xl:top-24 xl:self-start">
+          <div id="attention" className="scroll-mt-24">
+            <SurgeryAttention surgery={surgery} onChange={setSurgery} />
           </div>
-          <div className="mt-4 space-y-3 text-sm">
-            <SideRow icon={<CalendarDays className="size-4" />} label="Fecha" value={formatDate(surgery.surgery_date)} />
-            <SideRow icon={<Hospital className="size-4" />} label="Hospital" value={surgery.hospital || "No registrado"} />
-            <SideRow icon={<Scissors className="size-4" />} label="Procedimiento" value={surgery.procedure} />
-            <SideRow icon={<UserRound className="size-4" />} label="Rol" value={surgery.my_role || "No registrado"} />
-          </div>
-        </Card>
-      </aside>
+          {surgery.practice_setting !== "public" ? <SurgeryFinanceSummary surgery={surgery} activity={professionalActivity} /> : null}
+        </aside>
+      </div>
     </div>
   );
 }
@@ -168,24 +134,4 @@ function TextBlock({ title, value, icon }: { title: string; value: string | null
       </div>
     </SurgeryBlock>
   );
-}
-
-function SideRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
-  return (
-    <div className="flex gap-3 rounded-lg border border-line bg-white p-3">
-      <div className="pt-0.5 text-graphite">{icon}</div>
-      <div>
-        <p className="text-xs text-graphite">{label}</p>
-        <p className="font-medium text-ink">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("es-ES", {
-    day: "2-digit",
-    month: "long",
-    year: "numeric"
-  }).format(new Date(`${value}T00:00:00`));
 }
